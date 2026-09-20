@@ -39,6 +39,7 @@ export const initialDocuments: KnowledgeDocument[] = [
     date: "30 Jul 2026",
     scope: "General",
     extraScopes: ["Sales", "Support"],
+    editable: true,
     content:
       "Human-Centered Human-AI Interaction (HC-HAII): A Human-Centered AI Perspective\n\nThis paper surveys interaction paradigms between humans and AI systems, arguing that interface design must foreground user agency, transparency, and trust calibration rather than raw model capability.\n\nSection 1 — Motivation\nAs AI systems take on more autonomous roles, the interaction layer becomes the primary site where trust is built or broken.\n\nSection 2 — Design Implications\n- Prefer legible affordances over opaque automation.\n- Give users a cheap way to correct the system.\n- Calibrate confidence signals to actual model reliability.",
   },

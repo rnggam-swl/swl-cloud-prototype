@@ -6,8 +6,10 @@ reasoning survives until someone picks it up. It does not cover every piece of f
 review — only the items judged non-major and realistic to implement in the near term.
 
 The "Sort" → "Filter" item originally scoped as PF-1.3 was pulled forward and implemented
-immediately rather than deferred — see the changelog note at the bottom of this doc. The two
-remaining items below (PF-1.1, PF-1.2) are still planned, not yet built.
+immediately rather than deferred, and the in-place editing half of PF-1.1 was pulled forward the
+same way — see the changelog note at the bottom of this doc for both. PF-1.1's "Created"/"Updated"
+metadata split and the "Replace file" action for non-text formats are still planned, not yet built.
+PF-1.2 is entirely still planned.
 
 ## PF-1.1 — "Created" / "Updated" metadata, and editing a document without re-uploading it
 
@@ -41,8 +43,9 @@ links back to the list. So the gap is real, not hypothetical.
 ### Acceptance Criteria
 - [ ] Document list and detail page show both "Created" and "Updated" (falling back to "Created"
       when never updated, i.e. `updatedAt === createdAt`).
-- [ ] For MD/TXT documents, **Edit** opens an editor pre-filled with the current content; saving
-      updates the existing document in place and bumps `updatedAt`.
+- [x] For MD/TXT documents, **Edit** opens an editor pre-filled with the current content; saving
+      updates the existing document in place. *(Shipped without a separate `updatedAt` bump, since
+      that field doesn't exist yet — see the still-open "Created"/"Updated" criterion above.)*
 - [ ] For other formats, a **Replace file** action lets the user swap the file on an existing
       document without creating a duplicate entry.
 - [ ] Existing documents in seed/localStorage data that only have the old single `date` field
@@ -100,3 +103,21 @@ about what "Assignment" meant. Implemented directly instead of deferred:
 
 No open questions remain on this item — it shipped as scoped, with the Assignment reading
 confirmed by implementation rather than left pending.
+
+### 2026-09-20 — PF-1.1's in-place editor (MD/TXT) implemented, partially removed from the backlog
+The **Edit** capability itself — the actual pain point behind PF-1.1, not just the metadata
+labeling — was pulled forward and built:
+- Fixed a seed-data bug where the TXT sample document (`doc-2`) had `content` but was missing
+  `editable: true`, so its Edit button silently never rendered while the MD sample's did — the
+  discrepancy the AI Team flagged.
+- The list page's **Edit** button (`src/pages/knowledge-base-page.tsx`) now navigates to the
+  detail page and auto-opens the editor via router `state`, instead of being fully inert.
+- The detail page's **Edit** button (`src/pages/knowledge-detail-page.tsx`) no longer links back to
+  the list — it now toggles a real `DocumentEditor` (title input + Write/Preview tabs for MD, plain
+  textarea for TXT, reusing `MarkdownLite` for the preview) that saves back onto the *same*
+  document (`id`, `scope`/`groupId`, status all preserved) and recomputes `size`. Unsaved changes
+  prompt a confirm dialog on Cancel, matching `WriteDocumentDialog`'s existing convention.
+
+What's still open from PF-1.1: the `date` field has not been split into `createdAt`/`updatedAt`
+(the editor does not currently bump any "last updated" timestamp), and non-text formats (PDF,
+DOCX, JSON) still have no **Replace file** action. Both remain planned, not built.

@@ -1,8 +1,11 @@
 import { useState } from "react"
 import {
+  Activity,
   BookOpen,
+  Bot,
   Check,
   CloudUpload,
+  FileType,
   Layers,
   ListFilter,
   Pencil,
@@ -63,6 +66,13 @@ import { useKnowledgeVariant } from "@/lib/knowledge-variant"
 import { usePersistedSettings } from "@/lib/settings-data"
 
 const STATUS_OPTIONS: DocStatus[] = ["Queued", "Indexing", "Indexed", "Failed"]
+
+const STATUS_DOT_CLASS: Record<DocStatus, string> = {
+  Queued: "bg-muted-foreground/40",
+  Indexing: "bg-amber-500",
+  Indexed: "bg-emerald-500",
+  Failed: "bg-destructive",
+}
 
 export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
   const copy = modeCopy[mode]
@@ -306,15 +316,12 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
                 </Button>
               )}
 
-              <Button
-                variant="ghost"
-                size="lg"
-                disabled={!hasActiveFilter}
-                onClick={clearFilters}
-              >
-                <RotateCcw className="size-3.5" />
-                Reset
-              </Button>
+              {hasActiveFilter && (
+                <Button variant="ghost" size="lg" onClick={clearFilters}>
+                  <RotateCcw className="size-3.5" />
+                  Reset
+                </Button>
+              )}
 
               <div className="relative">
                 <Input
@@ -350,6 +357,7 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
                 <DropdownMenuContent align="end" className="w-48">
                   <DropdownMenuSub>
                     <DropdownMenuSubTrigger>
+                      <Activity className="size-3.5 text-muted-foreground" />
                       <span className="flex-1">Status</span>
                       {statusFilter.size > 0 && (
                         <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
@@ -365,6 +373,7 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
                           onSelect={(e) => e.preventDefault()}
                           onCheckedChange={(checked) => toggleStatus(status, checked === true)}
                         >
+                          <span className={`size-2 shrink-0 rounded-full ${STATUS_DOT_CLASS[status]}`} />
                           {status}
                         </DropdownMenuCheckboxItem>
                       ))}
@@ -373,6 +382,7 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
 
                   <DropdownMenuSub>
                     <DropdownMenuSubTrigger>
+                      <FileType className="size-3.5 text-muted-foreground" />
                       <span className="flex-1">Type</span>
                       {typeFilter.size > 0 && (
                         <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
@@ -397,6 +407,7 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
                   {mode === "connect" && (
                     <DropdownMenuSub>
                       <DropdownMenuSubTrigger>
+                        <Bot className="size-3.5 text-muted-foreground" />
                         <span className="flex-1">Assignment</span>
                         {scopeFilter && (
                           <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
@@ -496,12 +507,15 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
                   )}
                   {doc.editable && (
                     <Button
+                      asChild
                       variant="ghost"
                       size="sm"
                       className="text-muted-foreground hover:text-foreground"
                     >
-                      <Pencil className="size-3.5" />
-                      Edit
+                      <Link to={`/${mode}/knowledge/${doc.id}`} state={{ autoEdit: true }}>
+                        <Pencil className="size-3.5" />
+                        Edit
+                      </Link>
                     </Button>
                   )}
                   {mode === "connect" && variant === "b" && (
