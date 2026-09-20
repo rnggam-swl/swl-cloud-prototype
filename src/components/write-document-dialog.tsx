@@ -72,6 +72,7 @@ export function WriteDocumentDialog({
             write, the form mounts fresh with empty state. */}
         <EditorForm
           key={String(open)}
+          mode={mode}
           onClose={() => onOpenChange(false)}
           onCreate={onCreate}
         />
@@ -81,9 +82,11 @@ export function WriteDocumentDialog({
 }
 
 function EditorForm({
+  mode,
   onClose,
   onCreate,
 }: {
+  mode: KbMode
   onClose: () => void
   onCreate: (draft: NewDocumentDraft) => void
 }) {
@@ -124,7 +127,7 @@ function EditorForm({
             <SelectItem value="md">Markdown (.md)</SelectItem>
           </SelectContent>
         </Select>
-        <AgentScopeControl value={scope} onChange={setScope} />
+        {mode === "connect" && <AgentScopeControl value={scope} onChange={setScope} />}
       </div>
 
       <div className="flex items-center gap-1">

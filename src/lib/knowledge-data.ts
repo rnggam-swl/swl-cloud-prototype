@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 
 export type KbMode = "crew" | "connect"
-export type DocStatus = "Completed" | "Running" | "In Queue" | "Failed"
+export type DocStatus = "Indexed" | "Indexing" | "Queued" | "Failed"
 
 export interface KnowledgeDocument {
   id: string
@@ -33,7 +33,7 @@ export const initialDocuments: KnowledgeDocument[] = [
   {
     id: "doc-2",
     name: "Human-Centered Human-AI Interaction (HC-HAII): A Human-Centered AI Perspective",
-    status: "In Queue",
+    status: "Queued",
     fileType: "TXT",
     size: "1.2 MB",
     date: "30 Jul 2026",
@@ -45,7 +45,7 @@ export const initialDocuments: KnowledgeDocument[] = [
   {
     id: "doc-3",
     name: "THE EFFECTS OF MOBILE SERVICE QUALITIES ON CUSTOMER REUSE INTENTION OF GOJEK SUPER APP",
-    status: "Running",
+    status: "Indexing",
     fileType: "DOCX",
     size: "1.2 MB",
     date: "30 Jul 2026",
@@ -55,7 +55,7 @@ export const initialDocuments: KnowledgeDocument[] = [
   {
     id: "doc-4",
     name: "Human-Computer Interaction Design Principles for Enhancing User Experience in Mobile Applications",
-    status: "Completed",
+    status: "Indexed",
     fileType: "MD",
     size: "1.2 MB",
     date: "30 Jul 2026",
@@ -68,7 +68,7 @@ export const initialDocuments: KnowledgeDocument[] = [
   {
     id: "doc-5",
     name: "The Human Brain Encodes a Chronicle of Visual Events at Each Instant of Time Through the Multiplexing of Traveling Waves",
-    status: "Completed",
+    status: "Indexed",
     fileType: "JSON",
     size: "1.2 MB",
     date: "30 Jul 2026",
@@ -84,7 +84,7 @@ export const initialDocuments: KnowledgeDocument[] = [
   {
     id: "doc-6",
     name: "SOP Test Case Sawala",
-    status: "Completed",
+    status: "Indexed",
     fileType: "PDF",
     size: "1.2 MB",
     date: "30 Jul 2026",
@@ -94,9 +94,9 @@ export const initialDocuments: KnowledgeDocument[] = [
 ]
 
 export const statusStyles: Record<DocStatus, string> = {
-  Completed: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
-  Running: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
-  "In Queue": "bg-muted text-muted-foreground",
+  Indexed: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+  Indexing: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+  Queued: "bg-muted text-muted-foreground",
   Failed: "bg-destructive/15 text-destructive",
 }
 

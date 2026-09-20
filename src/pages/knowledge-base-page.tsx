@@ -58,11 +58,68 @@ import {
   statusStyles,
   usePersistedDocuments,
 } from "@/lib/knowledge-data"
-import { useKnowledgeVariant } from "@/lib/knowledge-variant"
+import {
+  type KbVariant,
+  type KnowledgeGroup,
+  useKnowledgeVariant,
+} from "@/lib/knowledge-variant"
 import { usePersistedSettings } from "@/lib/settings-data"
 
 function MetaSeparator() {
   return <span className="text-border">|</span>
+}
+
+/** Who-can-see-this tag for a document row. Variant C is groups-based, so it
+ * always uses the group icon and hover text, even for ungrouped ("General")
+ * documents — Variant A/B are agent-based, so they keep the agent icon and
+ * list every agent with access (including the primary scope, not just the
+ * "extra" ones) so the hover is a complete answer, not a partial one. */
+function DocScopeTag({
+  doc,
+  variant,
+  groups,
+  agentLabels,
+}: {
+  doc: KnowledgeDocument
+  variant: KbVariant
+  groups: KnowledgeGroup[]
+  agentLabels: string[]
+}) {
+  const isGrouped = variant === "c" && !!doc.groupId
+  const group = isGrouped ? groups.find((g) => g.id === doc.groupId) : undefined
+  const isGeneral = doc.scope === "General" && !isGrouped
+  const Icon = variant === "c" ? Layers : Bot
+
+  const hoverTitle = isGrouped
+    ? "Agents in this group"
+    : isGeneral
+      ? "Visible to all agents"
+      : "Agents with access"
+  const hoverAgents = isGrouped
+    ? (group?.agents ?? [])
+    : isGeneral
+      ? agentLabels
+      : [doc.scope, ...(doc.extraScopes ?? [])]
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="flex items-center gap-1 underline decoration-dotted underline-offset-2">
+          <Icon className="size-3" />
+          {isGrouped ? (group?.name ?? doc.scope) : doc.scope}
+          {!isGrouped && doc.extraScopes ? ` +${doc.extraScopes.length}` : ""}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        <div className="flex flex-col">
+          <span className="font-medium">{hoverTitle}</span>
+          {hoverAgents.map((agent) => (
+            <span key={agent}>{agent}</span>
+          ))}
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  )
 }
 
 export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
@@ -122,7 +179,7 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
 
   function retryDocument(id: string) {
     setDocuments((prev) =>
-      prev.map((d) => (d.id === id ? { ...d, status: "In Queue" } : d)),
+      prev.map((d) => (d.id === id ? { ...d, status: "Queued" } : d)),
     )
   }
 
@@ -168,7 +225,7 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
       {
         id: `doc-${Date.now()}`,
         name: draft.title,
-        status: "In Queue",
+        status: "Queued",
         fileType: draft.format === "md" ? "MD" : "TXT",
         size,
         date,
@@ -194,7 +251,7 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
       ...uploaded.map((u) => ({
         id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         name: u.title,
-        status: "In Queue" as const,
+        status: "Queued" as const,
         fileType: u.fileType,
         size: u.size,
         date,
@@ -289,27 +346,29 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
                 <Search className="absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
               </div>
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="lg">
-                    <Bot className="size-4" />
-                    {scopeFilter ?? "General (All Agents)"}
-                    <ChevronDown className="size-3.5 text-muted-foreground" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem onSelect={() => setScopeFilter(null)}>
-                    General (All Agents)
-                  </DropdownMenuItem>
-                  {agentLabels.map((agent) => (
-                    <DropdownMenuItem key={agent} onSelect={() => setScopeFilter(agent)}>
-                      {agent}
+              {mode === "connect" && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="lg">
+                      <Bot className="size-4" />
+                      {scopeFilter ?? "General (All Agents)"}
+                      <ChevronDown className="size-3.5 text-muted-foreground" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={() => setScopeFilter(null)}>
+                      General (All Agents)
                     </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                    {agentLabels.map((agent) => (
+                      <DropdownMenuItem key={agent} onSelect={() => setScopeFilter(agent)}>
+                        {agent}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
 
-              {variant === "c" && (
+              {mode === "connect" && variant === "c" && (
                 <Button
                   variant="outline"
                   size="lg"
@@ -369,47 +428,16 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
                     <span>{doc.size}</span>
                     <MetaSeparator />
                     <span>{doc.date}</span>
-                    <MetaSeparator />
-                    {variant === "c" && doc.groupId ? (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span className="flex items-center gap-1 underline decoration-dotted underline-offset-2">
-                            <Layers className="size-3" />
-                            {doc.scope}
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">
-                          <div className="flex flex-col">
-                            <span className="font-medium">Agents in this group</span>
-                            {groups
-                              .find((g) => g.id === doc.groupId)
-                              ?.agents.map((agent) => (
-                              <span key={agent}>{agent}</span>
-                            ))}
-                          </div>
-                        </TooltipContent>
-                      </Tooltip>
-                    ) : doc.extraScopes ? (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span className="flex items-center gap-1 underline decoration-dotted underline-offset-2">
-                            <Bot className="size-3" />
-                            {doc.scope} +{doc.extraScopes.length}
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">
-                          <div className="flex flex-col">
-                            {doc.extraScopes.map((scope) => (
-                              <span key={scope}>{scope}</span>
-                            ))}
-                          </div>
-                        </TooltipContent>
-                      </Tooltip>
-                    ) : (
-                      <span className="flex items-center gap-1">
-                        <Bot className="size-3" />
-                        {doc.scope}
-                      </span>
+                    {mode === "connect" && (
+                      <>
+                        <MetaSeparator />
+                        <DocScopeTag
+                          doc={doc}
+                          variant={variant}
+                          groups={groups}
+                          agentLabels={agentLabels}
+                        />
+                      </>
                     )}
                   </div>
                 </div>
@@ -435,7 +463,7 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
                       Edit
                     </Button>
                   )}
-                  {variant === "b" && (
+                  {mode === "connect" && variant === "b" && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -516,7 +544,7 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
         onDeleteGroup={handleGroupDeleted}
       />
 
-      <VariantSwitcher />
+      {mode === "connect" && <VariantSwitcher />}
     </div>
   )
 }

@@ -88,6 +88,7 @@ export function UploadDocumentDialog({
         {/* Keyed by `open` so every reopen starts from a clean upload queue. */}
         <UploadForm
           key={String(open)}
+          mode={mode}
           onClose={() => onOpenChange(false)}
           onUploaded={onUploaded}
         />
@@ -97,9 +98,11 @@ export function UploadDocumentDialog({
 }
 
 function UploadForm({
+  mode,
   onClose,
   onUploaded,
 }: {
+  mode: KbMode
   onClose: () => void
   onUploaded: (docs: UploadedDocument[]) => void
 }) {
@@ -212,7 +215,7 @@ function UploadForm({
         onChange={onInputChange}
       />
 
-      <AgentScopeControl value={scope} onChange={setScope} />
+      {mode === "connect" && <AgentScopeControl value={scope} onChange={setScope} />}
 
       <div
         onDragOver={(e) => {
