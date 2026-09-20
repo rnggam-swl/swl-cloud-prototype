@@ -1,8 +1,7 @@
 import { useState } from "react"
 import {
-  Bot,
   BookOpen,
-  ChevronDown,
+  Check,
   CloudUpload,
   Layers,
   ListFilter,
@@ -25,8 +24,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
-import { ManageAccessDialog } from "@/components/manage-access-dialog"
+import { ManageAccessDialog, type AccessSaveFields } from "@/components/manage-access-dialog"
 import { ManageGroupsDialog } from "@/components/manage-groups-dialog"
+import { DocScopeTag, MetaSeparator } from "@/components/knowledge-meta"
 import {
   type UploadedDocument,
   UploadDocumentDialog,
@@ -41,86 +41,26 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
-import {
+  type DocStatus,
   type KbMode,
   type KnowledgeDocument,
   modeCopy,
   statusStyles,
   usePersistedDocuments,
 } from "@/lib/knowledge-data"
-import {
-  type KbVariant,
-  type KnowledgeGroup,
-  useKnowledgeVariant,
-} from "@/lib/knowledge-variant"
+import { useKnowledgeVariant } from "@/lib/knowledge-variant"
 import { usePersistedSettings } from "@/lib/settings-data"
 
-function MetaSeparator() {
-  return <span className="text-border">|</span>
-}
-
-/** Who-can-see-this tag for a document row. Variant C is groups-based, so it
- * always uses the group icon and hover text, even for ungrouped ("General")
- * documents — Variant A/B are agent-based, so they keep the agent icon and
- * list every agent with access (including the primary scope, not just the
- * "extra" ones) so the hover is a complete answer, not a partial one. */
-function DocScopeTag({
-  doc,
-  variant,
-  groups,
-  agentLabels,
-}: {
-  doc: KnowledgeDocument
-  variant: KbVariant
-  groups: KnowledgeGroup[]
-  agentLabels: string[]
-}) {
-  const isGrouped = variant === "c" && !!doc.groupId
-  const group = isGrouped ? groups.find((g) => g.id === doc.groupId) : undefined
-  const isGeneral = doc.scope === "General" && !isGrouped
-  const Icon = variant === "c" ? Layers : Bot
-
-  const hoverTitle = isGrouped
-    ? "Agents in this group"
-    : isGeneral
-      ? "Visible to all agents"
-      : "Agents with access"
-  const hoverAgents = isGrouped
-    ? (group?.agents ?? [])
-    : isGeneral
-      ? agentLabels
-      : [doc.scope, ...(doc.extraScopes ?? [])]
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className="flex items-center gap-1 underline decoration-dotted underline-offset-2">
-          <Icon className="size-3" />
-          {isGrouped ? (group?.name ?? doc.scope) : doc.scope}
-          {!isGrouped && doc.extraScopes ? ` +${doc.extraScopes.length}` : ""}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent side="bottom">
-        <div className="flex flex-col">
-          <span className="font-medium">{hoverTitle}</span>
-          {hoverAgents.map((agent) => (
-            <span key={agent}>{agent}</span>
-          ))}
-        </div>
-      </TooltipContent>
-    </Tooltip>
-  )
-}
+const STATUS_OPTIONS: DocStatus[] = ["Queued", "Indexing", "Indexed", "Failed"]
 
 export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
   const copy = modeCopy[mode]
@@ -135,15 +75,51 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
   const [accessOpen, setAccessOpen] = useState(false)
   const [groupsOpen, setGroupsOpen] = useState(false)
   const [scopeFilter, setScopeFilter] = useState<string | null>(null)
+  const [statusFilter, setStatusFilter] = useState<Set<DocStatus>>(new Set())
+  const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set())
 
   const agentLabels = settings.connectAgents.filter((a) => a.enabled).map((a) => a.label)
+  const typeOptions = Array.from(new Set(documents.map((d) => d.fileType))).sort()
+  const hasActiveFilter = statusFilter.size > 0 || typeFilter.size > 0 || !!scopeFilter
+  const activeFilterCount =
+    (statusFilter.size > 0 ? 1 : 0) + (typeFilter.size > 0 ? 1 : 0) + (scopeFilter ? 1 : 0)
 
-  const visibleDocuments = scopeFilter
-    ? documents.filter((d) => {
-        if (d.groupId) return (groups.find((g) => g.id === d.groupId)?.agents ?? []).includes(scopeFilter)
-        return d.scope === scopeFilter || (d.extraScopes ?? []).includes(scopeFilter)
-      })
-    : documents
+  const visibleDocuments = documents.filter((d) => {
+    if (statusFilter.size > 0 && !statusFilter.has(d.status)) return false
+    if (typeFilter.size > 0 && !typeFilter.has(d.fileType)) return false
+    if (scopeFilter) {
+      if (d.groupId) {
+        if (!(groups.find((g) => g.id === d.groupId)?.agents ?? []).includes(scopeFilter)) return false
+      } else if (d.scope !== scopeFilter && !(d.extraScopes ?? []).includes(scopeFilter)) {
+        return false
+      }
+    }
+    return true
+  })
+
+  function toggleStatus(status: DocStatus, checked: boolean) {
+    setStatusFilter((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(status)
+      else next.delete(status)
+      return next
+    })
+  }
+
+  function toggleType(type: string, checked: boolean) {
+    setTypeFilter((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(type)
+      else next.delete(type)
+      return next
+    })
+  }
+
+  function clearFilters() {
+    setStatusFilter(new Set())
+    setTypeFilter(new Set())
+    setScopeFilter(null)
+  }
 
   const selectedCount = selectedIds.size
   const allSelected = selectedCount > 0 && selectedCount === visibleDocuments.length
@@ -198,18 +174,8 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
     )
   }
 
-  function saveAccess(id: string, agents: string[]) {
-    setDocuments((prev) =>
-      prev.map((d) =>
-        d.id === id
-          ? {
-              ...d,
-              scope: agents.length === 0 ? "General" : agents[0],
-              extraScopes: agents.length > 1 ? agents.slice(1) : undefined,
-            }
-          : d,
-      ),
-    )
+  function saveAccess(id: string, fields: AccessSaveFields) {
+    setDocuments((prev) => prev.map((d) => (d.id === id ? { ...d, ...fields } : d)))
   }
 
   function handleCreate(draft: NewDocumentDraft) {
@@ -346,28 +312,6 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
                 <Search className="absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
               </div>
 
-              {mode === "connect" && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="lg">
-                      <Bot className="size-4" />
-                      {scopeFilter ?? "General (All Agents)"}
-                      <ChevronDown className="size-3.5 text-muted-foreground" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onSelect={() => setScopeFilter(null)}>
-                      General (All Agents)
-                    </DropdownMenuItem>
-                    {agentLabels.map((agent) => (
-                      <DropdownMenuItem key={agent} onSelect={() => setScopeFilter(agent)}>
-                        {agent}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-
               {mode === "connect" && variant === "c" && (
                 <Button
                   variant="outline"
@@ -379,10 +323,72 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
                 </Button>
               )}
 
-              <Button variant="outline" size="lg">
-                <ListFilter className="size-3.5" />
-                Sort
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant={activeFilterCount > 0 ? "secondary" : "outline"} size="lg">
+                    <ListFilter className="size-3.5" />
+                    Filter
+                    {activeFilterCount > 0 && (
+                      <Badge variant="outline" className="ml-0.5 px-1.5 py-0 text-[10px]">
+                        {activeFilterCount}
+                      </Badge>
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuLabel className="text-[10px] tracking-wide text-muted-foreground uppercase">
+                    Status
+                  </DropdownMenuLabel>
+                  {STATUS_OPTIONS.map((status) => (
+                    <DropdownMenuCheckboxItem
+                      key={status}
+                      checked={statusFilter.has(status)}
+                      onSelect={(e) => e.preventDefault()}
+                      onCheckedChange={(checked) => toggleStatus(status, checked === true)}
+                    >
+                      {status}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="text-[10px] tracking-wide text-muted-foreground uppercase">
+                    Type
+                  </DropdownMenuLabel>
+                  {typeOptions.map((type) => (
+                    <DropdownMenuCheckboxItem
+                      key={type}
+                      checked={typeFilter.has(type)}
+                      onSelect={(e) => e.preventDefault()}
+                      onCheckedChange={(checked) => toggleType(type, checked === true)}
+                    >
+                      {type}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                  {mode === "connect" && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel className="text-[10px] tracking-wide text-muted-foreground uppercase">
+                        Assignment
+                      </DropdownMenuLabel>
+                      <DropdownMenuItem onSelect={() => setScopeFilter(null)}>
+                        <Check className={`size-3.5 ${scopeFilter ? "invisible" : ""}`} />
+                        General (All Agents)
+                      </DropdownMenuItem>
+                      {agentLabels.map((agent) => (
+                        <DropdownMenuItem key={agent} onSelect={() => setScopeFilter(agent)}>
+                          <Check className={`size-3.5 ${scopeFilter === agent ? "" : "invisible"}`} />
+                          {agent}
+                        </DropdownMenuItem>
+                      ))}
+                    </>
+                  )}
+                  {hasActiveFilter && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onSelect={clearFilters}>Clear filters</DropdownMenuItem>
+                    </>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
               <Button variant="outline" size="lg">
                 <RefreshCw className="size-3.5" />
                 Refresh
@@ -393,7 +399,9 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
           <div className="flex flex-col divide-y">
             {visibleDocuments.length === 0 && (
               <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-                No documents scoped to {scopeFilter}.
+                {hasActiveFilter
+                  ? "No documents match the selected filters."
+                  : "No documents yet."}
               </p>
             )}
             {visibleDocuments.map((doc) => (
@@ -431,12 +439,7 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
                     {mode === "connect" && (
                       <>
                         <MetaSeparator />
-                        <DocScopeTag
-                          doc={doc}
-                          variant={variant}
-                          groups={groups}
-                          agentLabels={agentLabels}
-                        />
+                        <DocScopeTag doc={doc} variant={variant} groups={groups} />
                       </>
                     )}
                   </div>

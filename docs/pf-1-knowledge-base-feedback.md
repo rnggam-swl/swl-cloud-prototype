@@ -1,9 +1,13 @@
 # PF-1 — Knowledge base feedback (AI Team review)
 
-**Status:** Planned — not yet implemented. This is a spec for a future execution pass, written up
-from the AI Team's review of the Connect → Knowledge base page so the reasoning survives until
-someone picks it up. It does not cover every piece of feedback from that review — only the items
-judged non-major and realistic to implement in the near term.
+**Status:** Planned — not yet implemented, except where noted. This is a spec for a future
+execution pass, written up from the AI Team's review of the Connect → Knowledge base page so the
+reasoning survives until someone picks it up. It does not cover every piece of feedback from that
+review — only the items judged non-major and realistic to implement in the near term.
+
+The "Sort" → "Filter" item originally scoped as PF-1.3 was pulled forward and implemented
+immediately rather than deferred — see the changelog note at the bottom of this doc. The two
+remaining items below (PF-1.1, PF-1.2) are still planned, not yet built.
 
 ## PF-1.1 — "Created" / "Updated" metadata, and editing a document without re-uploading it
 
@@ -78,37 +82,21 @@ split into two different levels of difficulty:
 - What defines a "duplicate" — filename, size, or content? This decides both the detection logic
   and the recovery UX, and needs its own discussion before scoping the rest of this item.
 
-## PF-1.3 — "Sort" → "Filter" (status, type, assignment)
+## Changelog
 
-### Background
-The document list's **Sort** button (`src/pages/knowledge-base-page.tsx`) is currently unwired —
-it renders but does nothing. The AI Team wants it replaced with a **Filter** control offering
-filter-by-status, filter-by-type, and filter-by-"assignment." "Assignment" wasn't clearly defined
-by the AI Team.
+### 2026-09-20 — PF-1.3 ("Sort" → "Filter") implemented, removed from the backlog
+Originally scoped as PF-1.3 with three facets (Status, Type, Assignment) and an open question
+about what "Assignment" meant. Implemented directly instead of deferred:
+- The **Sort** button (`src/pages/knowledge-base-page.tsx`) is now **Filter**, opening a menu with
+  **Status** (`DocStatus`), **Type** (`doc.fileType`, derived from whichever types are present),
+  and — Connect mode only — **Assignment**.
+- "Assignment" was read as "who can access this document." The previously separate toolbar
+  scope-filter dropdown (the Bot-icon control) was folded into Filter as this facet instead of
+  staying a second, standalone dropdown — one control instead of two doing related jobs.
+- Assignment doesn't render in Crew mode, consistent with Crew having no multi-agent roster (the
+  same reasoning already applied to the other agent/group controls hidden there).
+- The active-filter count shows on the Filter button, and a "Clear filters" action appears once
+  any facet is set.
 
-### Recommendation
-- Rename **Sort** to **Filter** and give it real behavior: a popover/menu with three facets.
-  - **Status** — maps directly to `DocStatus` (`Queued` / `Indexing` / `Indexed` / `Failed`).
-  - **Type** — maps to `doc.fileType`, derived dynamically from whatever file types are present
-    in the current document list.
-  - **Assignment** — read as "who can access this document," which already exists today as the
-    separate toolbar scope-filter dropdown (the Bot-icon control, Connect mode only, filtering by
-    `agentLabels`). Recommendation: fold that existing control into "Filter" as its Assignment
-    facet instead of keeping it as a second, separate dropdown next to the new Filter button — one
-    control instead of two doing related jobs.
-- "Assignment" is Connect-only by nature (Crew has no multi-agent roster — see the change that
-  already hid the equivalent scope controls on Crew's Knowledge base page), so the Filter control's
-  Assignment facet should simply not render in Crew mode, consistent with that earlier change.
-
-### Acceptance Criteria
-- [ ] "Sort" button is replaced with "Filter."
-- [ ] Filter supports Status and Type in both Crew and Connect modes.
-- [ ] Filter supports Assignment (by agent, consistent with however documents are actually scoped
-      under the active variant) in Connect mode only; the facet is absent in Crew mode.
-- [ ] The existing standalone agent-scope filter dropdown is removed once its behavior is folded
-      into Filter, so there is one control for this, not two.
-
-### Open Questions
-- None blocking, pending confirmation that "Assignment = who can access this document" is the
-  correct reading — flagged in this doc specifically because the AI Team's own note said they
-  weren't sure about this one either.
+No open questions remain on this item — it shipped as scoped, with the Assignment reading
+confirmed by implementation rather than left pending.

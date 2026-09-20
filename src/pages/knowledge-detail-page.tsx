@@ -1,5 +1,8 @@
-import { ArrowLeft, Download, FileWarning, Pencil } from "lucide-react"
+import { useState } from "react"
+import { ArrowLeft, Download, FileWarning, Pencil, Users } from "lucide-react"
 import { Link, useParams } from "react-router-dom"
+import { DocScopeTag, MetaSeparator } from "@/components/knowledge-meta"
+import { ManageAccessDialog, type AccessSaveFields } from "@/components/manage-access-dialog"
 import { MarkdownLite } from "@/components/markdown-lite"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -10,13 +13,20 @@ import {
   statusStyles,
   usePersistedDocuments,
 } from "@/lib/knowledge-data"
+import { useKnowledgeVariant } from "@/lib/knowledge-variant"
 import { cn } from "@/lib/utils"
 
 export function KnowledgeDetailPage({ mode }: { mode: KbMode }) {
   const { itemId } = useParams<{ itemId: string }>()
   const listHref = modeCopy[mode].listHref
-  const [documents] = usePersistedDocuments()
+  const { variant, groups } = useKnowledgeVariant()
+  const [documents, setDocuments] = usePersistedDocuments()
+  const [accessOpen, setAccessOpen] = useState(false)
   const doc = documents.find((d) => d.id === itemId)
+
+  function saveAccess(id: string, fields: AccessSaveFields) {
+    setDocuments((prev) => prev.map((d) => (d.id === id ? { ...d, ...fields } : d)))
+  }
 
   if (!doc) {
     return (
@@ -55,9 +65,19 @@ export function KnowledgeDetailPage({ mode }: { mode: KbMode }) {
                 {doc.status}
               </Badge>
             </div>
-            <p className="mt-0.5 truncate text-[11px] text-muted-foreground">
-              {[doc.fileType, doc.size, doc.date].join(" · ")}
-            </p>
+            <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span>{doc.fileType}</span>
+              <MetaSeparator />
+              <span>{doc.size}</span>
+              <MetaSeparator />
+              <span>{doc.date}</span>
+              {mode === "connect" && (
+                <>
+                  <MetaSeparator />
+                  <DocScopeTag doc={doc} variant={variant} groups={groups} />
+                </>
+              )}
+            </div>
           </div>
           <div className="flex shrink-0 items-center gap-1">
             {doc.editable && (
@@ -66,6 +86,17 @@ export function KnowledgeDetailPage({ mode }: { mode: KbMode }) {
                   <Pencil className="size-3.5" />
                   Edit
                 </Link>
+              </Button>
+            )}
+            {mode === "connect" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="gap-1.5"
+                onClick={() => setAccessOpen(true)}
+              >
+                <Users className="size-3.5" />
+                Manage Access
               </Button>
             )}
             <Button variant="outline" size="sm" className="gap-1.5">
@@ -81,6 +112,13 @@ export function KnowledgeDetailPage({ mode }: { mode: KbMode }) {
           <DocumentPreview doc={doc} />
         </div>
       </main>
+
+      <ManageAccessDialog
+        doc={doc}
+        open={accessOpen}
+        onOpenChange={setAccessOpen}
+        onSave={saveAccess}
+      />
     </div>
   )
 }
