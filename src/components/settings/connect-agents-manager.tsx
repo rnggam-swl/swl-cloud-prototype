@@ -75,7 +75,7 @@ export function ConnectAgentsManager({
         {agents.map((a: ConnectAgent) => {
           const isSelected = a.agentKey === selected
           const isGeneral = a.agentKey === "general"
-          const group = variant === "c" ? groups.find((g) => g.agents.includes(a.label)) : undefined
+          const agentGroups = variant === "c" ? groups.filter((g) => g.agents.includes(a.label)) : []
           const docCount =
             variant !== "c"
               ? documents.filter((d) => d.scope === a.label || d.extraScopes?.includes(a.label)).length
@@ -91,11 +91,14 @@ export function ConnectAgentsManager({
               <button type="button" onClick={() => onOpen(a.agentKey)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
                 <span className="truncate font-medium">{a.label}</span>
                 {variant === "c" ? (
-                  group && (
-                    <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
-                      #{group.name}
+                  agentGroups.map((g) => (
+                    <span
+                      key={g.id}
+                      className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400"
+                    >
+                      #{g.name}
                     </span>
-                  )
+                  ))
                 ) : (
                   docCount > 0 && (
                     <span className="shrink-0 rounded-full border px-2 py-0.5 text-[10px] text-muted-foreground">

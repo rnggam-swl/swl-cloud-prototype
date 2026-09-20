@@ -69,9 +69,9 @@ just decoupled into two steps (create, then assign) instead of one.
 ## Variant C — Knowledge Groups (selected)
 
 **Concept:** every document belongs to exactly **one** named group (e.g. Sales, Support, General).
-Every agent subscribes to at most one group. An agent can retrieve a document if the document's
-group matches the agent's group, or if the document is ungrouped ("General" — visible to every
-agent).
+An agent can subscribe to **one or more** groups. An agent can retrieve a document if any of the
+agent's groups matches the document's group, or if the document is ungrouped ("General" — visible
+to every agent).
 
 **Where it lives in this prototype:**
 - `src/lib/knowledge-variant.tsx` — `KnowledgeGroup` type, `DEFAULT_GROUPS` seed, the
@@ -112,7 +112,7 @@ out to be common in real usage, the fix is to loosen the model later (see
 |---|---|---|---|---|---|
 | **A** | Must retrofit every existing relevant document by hand | Pick N agents at upload time | No BE change needed (FK-based) | Cascade-delete join rows (FK-based) | Join + filter across all documents |
 | **B** | Same as A | Starts unscoped; needs a manual follow-up assignment | No BE change needed (FK-based) | Same as A | Same as A |
-| **C** | One row: agent → group | Pick 1 group | No BE change needed (FK-based) | `SET NULL` on the one membership column | Single equality filter |
+| **C** | One or more rows: agent → group(s) | Pick 1 group | No BE change needed (FK-based) | Cascade-delete membership rows (FK-based) | Small join + equality filter |
 
 The "no BE change needed" cells matter: this prototype's rename-cascade code
 (`connect-agents-manager.tsx`, `agent-detail-dialog.tsx`) exists **only** because `localStorage`
@@ -120,8 +120,8 @@ has no relational integrity, so the app stores the agent's display *label* direc
 data and has to manually keep it in sync. A real relational database wouldn't have this problem
 for any of the three variants — it would use a stable `agent_key` foreign key, and renames would
 be free everywhere. Variant C's structural advantage is narrower but still real: it needs far
-fewer *rows* to change per operation, because access is mediated through one group per agent/doc
-instead of a per-document array.
+fewer *rows* to change per operation, because access is mediated through a handful of group
+memberships per agent and one group per document, instead of a per-document array.
 
 ## Backend design — Variant A (reference, not being built)
 
@@ -164,26 +164,34 @@ CREATE TABLE knowledge_groups (
   UNIQUE (project_id, id)
 );
 
-ALTER TABLE connect_agents
-  ADD COLUMN knowledge_group_id TEXT REFERENCES knowledge_groups(id) ON DELETE SET NULL;
-  -- NULL = agent has no group; sees only ungrouped ("General") documents.
+-- An agent may belong to more than one group (built in the prototype — see
+-- agent-detail-dialog.tsx's "Knowledge groups" toggle + multi-select), so
+-- membership is a join table rather than a single FK column on the agent.
+CREATE TABLE agent_group_membership (
+  agent_key  TEXT NOT NULL REFERENCES connect_agents(agent_key) ON DELETE CASCADE,
+  group_id   TEXT NOT NULL REFERENCES knowledge_groups(id) ON DELETE CASCADE,
+  PRIMARY KEY (agent_key, group_id)
+);
+-- An agent with zero rows here has no group; it sees only ungrouped
+-- ("General") documents.
 
 ALTER TABLE knowledge_documents
   ADD COLUMN knowledge_group_id TEXT REFERENCES knowledge_groups(id) ON DELETE SET NULL;
   -- NULL = ungrouped ("General"); visible to every agent regardless of group.
 ```
 
-`ON DELETE SET NULL` on both foreign keys directly implements the "deleting a group falls its
-agents and documents back to General" cascade this prototype already does client-side in
+`ON DELETE CASCADE` on `agent_group_membership` and `ON DELETE SET NULL` on
+`knowledge_documents.knowledge_group_id` directly implement the "deleting a group falls its agents
+and documents back to General" cascade this prototype already does client-side in
 `manage-groups-dialog.tsx` — no application-level cascade code is needed with a real FK.
 
 ### Access resolution
 
 ```sql
-SELECT d.*
+SELECT DISTINCT d.*
 FROM knowledge_documents d
-JOIN connect_agents a ON a.agent_key = :agent_key
-WHERE d.knowledge_group_id = a.knowledge_group_id
+LEFT JOIN agent_group_membership m ON m.agent_key = :agent_key
+WHERE d.knowledge_group_id = m.group_id
    OR d.knowledge_group_id IS NULL;
 ```
 
@@ -191,43 +199,42 @@ WHERE d.knowledge_group_id = a.knowledge_group_id
 
 Each embedded chunk in the vector index should carry `knowledge_group_id` (nullable) as metadata
 alongside the embedding, not as part of the embedded text. At query time, the retrieval call adds
-a metadata filter: `knowledge_group_id IN (:agent_group_id, NULL)`, combined with the semantic
-search as usual. The key property: **moving a document to a different group is a metadata update
-on its existing vectors, not a re-embed** — cheap, and safe to do live.
+a metadata filter: `knowledge_group_id IN (:agent_group_ids, NULL)`, where `:agent_group_ids` is
+the small set of groups that agent belongs to (from `agent_group_membership`), combined with the
+semantic search as usual. The key property: **moving a document to a different group is a metadata
+update on its existing vectors, not a re-embed** — cheap, and safe to do live.
 
 ### Lifecycle / API surface
 
 - `POST /projects/:id/knowledge-groups` — create `{ name }`
 - `PATCH /projects/:id/knowledge-groups/:groupId` — rename (metadata-only; touches no document or
   agent row)
-- `DELETE /projects/:id/knowledge-groups/:groupId` — delete; `ON DELETE SET NULL` falls members
+- `DELETE /projects/:id/knowledge-groups/:groupId` — delete; cascading `ON DELETE` falls members
   and documents back to ungrouped
-- `PATCH /projects/:id/connect-agents/:agentKey` — existing agent-update endpoint gains
-  `knowledgeGroupId`
+- `PUT /projects/:id/connect-agents/:agentKey/groups` — replace the agent's full set of group
+  memberships in one call (the natural shape for a multi-select form save)
 - `PATCH /projects/:id/knowledge/:documentId` — existing document-update endpoint gains
   `knowledgeGroupId`
 
 ### Migration notes from this prototype
 
 - The prototype's `KnowledgeGroup.agents: string[]` (agent *labels* stored on the group) becomes
-  the `connect_agents.knowledge_group_id` foreign key above — the relationship direction flips
-  from "group owns a list of agent names" to "agent points at its group," which is what removes
-  the need for rename-cascade code entirely.
-- The prototype constrains an agent to **at most one** group via a single `<select>` in
-  `agent-detail-dialog.tsx`, and a document to **at most one** group via `groupId`. The schema
-  above mirrors that 1:1-ish shape deliberately (see [Future extensions](#future-extensions-if-needed)
-  for when to loosen it).
+  the `agent_group_membership` join table above — the relationship direction flips from "group
+  owns a list of agent names" to "agent points at its groups via stable `agent_key` foreign keys,"
+  which is what removes the need for rename-cascade code entirely.
+- The prototype allows an agent to belong to **more than one** group (a toggle + multi-select in
+  `agent-detail-dialog.tsx` — see the "Knowledge groups" field), matching the
+  `agent_group_membership` join table above. A document still belongs to **at most one** group via
+  `groupId` — see [Future extensions](#future-extensions-if-needed) for when to loosen that side
+  too.
 
 ### Future extensions (if needed)
 
-Only pursue these if real usage shows a genuine need — not preemptively:
-- **Agent in multiple groups:** replace `connect_agents.knowledge_group_id` with a
-  `agent_group_membership (agent_key, group_id)` join table.
+Only pursue this if real usage shows a genuine need — not preemptively:
 - **Document visible to multiple groups:** replace `knowledge_documents.knowledge_group_id` with
   a `document_group (document_id, group_id)` join table, and change the retrieval filter to an
-  `IN`/`EXISTS` check instead of equality.
-Either change can be made independently of the other, and neither is required to ship Variant C
-as decided.
+  `IN`/`EXISTS` check instead of equality. This is the one side of the group relationship that's
+  still 1:1 — the agent side already moved to many-to-many (see Migration notes above).
 
 ## What is not being built
 

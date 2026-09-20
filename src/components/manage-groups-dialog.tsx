@@ -85,7 +85,7 @@ export function ManageGroupsDialog({
         <DialogHeader className="min-w-0">
           <DialogTitle>Manage knowledge groups</DialogTitle>
           <DialogDescription>
-            Agents subscribe to a group instead of individual documents.
+            Agents subscribe to one or more groups instead of individual documents.
             Deleting a group falls its documents back to General.
           </DialogDescription>
         </DialogHeader>

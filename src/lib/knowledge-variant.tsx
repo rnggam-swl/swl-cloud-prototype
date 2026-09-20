@@ -35,10 +35,14 @@ export interface KnowledgeGroup {
   agents: string[]
 }
 
+// No seed "General" group on purpose — General is the implicit ungrouped
+// state (an agent/document with no group membership), not a group you join.
+// A named group called "General" would be redundant with that and confusing
+// (it would mean "only visible to General-group members," the opposite of
+// what "general knowledge" is supposed to mean).
 const DEFAULT_GROUPS: KnowledgeGroup[] = [
   { id: "sales", name: "Sales", agents: ["Sales"] },
   { id: "support", name: "Support", agents: ["Support", "Billing"] },
-  { id: "general", name: "General", agents: ["General"] },
 ]
 
 const VARIANT_STORAGE_KEY = "ajena-kb-variant"

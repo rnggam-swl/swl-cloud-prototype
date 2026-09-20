@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { Trash2 } from "lucide-react"
+import { Info, Trash2 } from "lucide-react"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ModeEditor } from "@/components/settings/agent-instruction-editor"
 import { usePersistedDocuments } from "@/lib/knowledge-data"
@@ -137,18 +138,30 @@ function AgentForm({
   const [label, setLabel] = useState(existing?.label ?? "")
   const [labelId, setLabelId] = useState(existing?.labelId ?? "")
   const [description, setDescription] = useState(existing?.description ?? "")
-  const [enabled, setEnabled] = useState(existing?.enabled ?? true)
   const [welcomeMessage, setWelcomeMessage] = useState(existing?.welcomeMessage ?? "")
   const [model, setModel] = useState(existing?.model ?? "")
   const [feedback, setFeedback] = useState<string | null>(null)
 
   const modelChoices = catalogFor("connect")
 
-  // Variant C (Knowledge Groups): which group this agent currently belongs
+  // Variant C (Knowledge Groups): which groups this agent currently belongs
   // to, derived from the group side (a group owns its agent list) so this
-  // form and Manage Groups can never disagree about membership.
-  const currentGroup = existing ? groups.find((g) => g.agents.includes(existing.label)) : undefined
-  const [groupId, setGroupId] = useState(currentGroup?.id ?? "")
+  // form and Manage Groups can never disagree about membership. An agent can
+  // belong to more than one group at once.
+  const currentGroupIds = existing
+    ? groups.filter((g) => g.agents.includes(existing.label)).map((g) => g.id)
+    : []
+  const [groupIds, setGroupIds] = useState<string[]>(currentGroupIds)
+  const [groupsEnabled, setGroupsEnabled] = useState(currentGroupIds.length > 0)
+
+  function toggleGroupsEnabled(next: boolean) {
+    setGroupsEnabled(next)
+    if (!next) setGroupIds([])
+  }
+
+  function toggleGroup(id: string, checked: boolean) {
+    setGroupIds((prev) => (checked ? [...prev, id] : prev.filter((g) => g !== id)))
+  }
 
   // Variant A/B: which documents are already scoped to this agent, by its
   // saved label — a live preview, not something this form edits directly.
@@ -163,10 +176,10 @@ function AgentForm({
     label !== (existing?.label ?? "") ||
     labelId !== (existing?.labelId ?? "") ||
     description !== (existing?.description ?? "") ||
-    enabled !== (existing?.enabled ?? true) ||
     welcomeMessage !== (existing?.welcomeMessage ?? "") ||
     model !== (existing?.model ?? "") ||
-    groupId !== (currentGroup?.id ?? "")
+    groupIds.length !== currentGroupIds.length ||
+    !groupIds.every((id) => currentGroupIds.includes(id))
   useEffect(() => {
     onDirtyChange(dirty)
   }, [dirty, onDirtyChange])
@@ -184,7 +197,7 @@ function AgentForm({
       label: newLabel,
       labelId: labelId.trim() || undefined,
       description: description.trim(),
-      enabled,
+      enabled: existing?.enabled ?? true,
       welcomeMessage: welcomeMessage.trim() || undefined,
       model,
     }
@@ -197,7 +210,10 @@ function AgentForm({
 
     // Knowledge groups (variant C) reference agents by label, so a rename
     // has to follow through there too, on top of applying this form's own
-    // group choice — both are one pass over `groups` so they can't race.
+    // group choices — both are one pass over `groups` so they can't race.
+    // An agent can belong to more than one group, so this adds the agent to
+    // every group in `groupIds` and removes it from every group not in
+    // `groupIds`, in the same pass.
     if (renamed || variant === "c") {
       setGroups((prev) =>
         prev.map((g) => {
@@ -206,9 +222,10 @@ function AgentForm({
             agentsList = agentsList.map((a) => (a === oldLabel ? newLabel : a))
           }
           if (variant === "c") {
+            const shouldBeIn = groupIds.includes(g.id)
             const has = agentsList.includes(newLabel)
-            if (g.id === groupId && !has) agentsList = [...agentsList, newLabel]
-            if (g.id !== groupId && has) agentsList = agentsList.filter((a) => a !== newLabel)
+            if (shouldBeIn && !has) agentsList = [...agentsList, newLabel]
+            if (!shouldBeIn && has) agentsList = agentsList.filter((a) => a !== newLabel)
           }
           return agentsList === g.agents ? g : { ...g, agents: agentsList }
         }),
@@ -272,24 +289,49 @@ function AgentForm({
           maxLength={280}
         />
       </div>
-      <label className="flex items-center gap-2 text-sm">
-        <Checkbox checked={enabled} onCheckedChange={(v) => setEnabled(v === true)} />
-        Enabled
-      </label>
-
       {variant === "c" ? (
-        <div>
-          <label className="text-xs font-medium">Knowledge group</label>
-          <select className={cn(field, "mt-1")} value={groupId} onChange={(e) => setGroupId(e.target.value)}>
-            <option value="">No group</option>
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.name}
-              </option>
-            ))}
-          </select>
-          <p className="mt-0.5 text-[10px] text-muted-foreground">
-            Which knowledge group this agent draws from. Manage groups from the Knowledge base page.
+        <div className="pt-1">
+          <div className="flex items-center justify-between gap-3">
+            <label className="text-xs font-medium">Knowledge groups</label>
+            <label className="flex items-center gap-2.5 text-xs text-muted-foreground">
+              {groupsEnabled ? "Specific groups" : "General"}
+              <Switch checked={groupsEnabled} onCheckedChange={toggleGroupsEnabled} />
+            </label>
+          </div>
+
+          {!groupsEnabled ? (
+            <p className="mt-2 flex items-start gap-2.5 rounded-lg border bg-muted/40 px-3.5 py-3 text-xs leading-relaxed text-muted-foreground">
+              <Info className="mt-0.5 size-4 shrink-0 opacity-75" />
+              <span>
+                This agent isn&apos;t assigned to any group, so it only draws from General
+                knowledge (visible to every agent). Turn this on to pick one or more specific
+                groups instead.
+              </span>
+            </p>
+          ) : (
+            <div className="mt-2 flex flex-col gap-1 rounded-md border p-2">
+              {groups.length === 0 ? (
+                <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                  No groups yet — create one from the Knowledge base page.
+                </p>
+              ) : (
+                groups.map((g) => (
+                  <label
+                    key={g.id}
+                    className="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
+                  >
+                    <Checkbox
+                      checked={groupIds.includes(g.id)}
+                      onCheckedChange={(v) => toggleGroup(g.id, v === true)}
+                    />
+                    {g.name}
+                  </label>
+                ))
+              )}
+            </div>
+          )}
+          <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+            An agent can belong to more than one group. Manage groups from the Knowledge base page.
           </p>
         </div>
       ) : (

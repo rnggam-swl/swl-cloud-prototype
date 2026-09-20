@@ -39,6 +39,7 @@ Because of that:
 
 - [Knowledge base access control: variant comparison and decision](docs/knowledge-access-variants.md) — why Variant C (Knowledge Groups) was chosen over multi-select agents and access routing, and what a real backend for each variant would look like.
 - [PF-1 — Knowledge base feedback (AI Team review)](docs/pf-1-knowledge-base-feedback.md) — spec for a future execution pass covering created/updated metadata + in-place editing, distinct upload error states, and the Sort → Filter change.
+- [Ticket — Knowledge scope selector](docs/ticket-knowledge-scope-selector.md) — proposed solution for the "Add a document" scope dropdown and the Agent form's Knowledge Groups field, covering both since they're two views of the same access model.
 
 ## Running locally
 
