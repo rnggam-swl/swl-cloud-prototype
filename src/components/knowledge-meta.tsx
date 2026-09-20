@@ -37,7 +37,7 @@ export function DocScopeTag({
     <span className="flex items-center gap-1 underline decoration-dotted underline-offset-2">
       <Icon className="size-3" />
       {isGrouped ? (group?.name ?? doc.scope) : doc.scope}
-      {!isGrouped && doc.extraScopes ? ` +${doc.extraScopes.length}` : ""}
+      {!isGrouped && !isGeneral && doc.extraScopes ? ` +${doc.extraScopes.length}` : ""}
     </span>
   )
 

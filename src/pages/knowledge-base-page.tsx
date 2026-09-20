@@ -44,8 +44,10 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
@@ -304,6 +306,16 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
                 </Button>
               )}
 
+              <Button
+                variant="ghost"
+                size="lg"
+                disabled={!hasActiveFilter}
+                onClick={clearFilters}
+              >
+                <RotateCcw className="size-3.5" />
+                Reset
+              </Button>
+
               <div className="relative">
                 <Input
                   placeholder="Search..."
@@ -335,52 +347,78 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
                     )}
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <DropdownMenuLabel className="text-[10px] tracking-wide text-muted-foreground uppercase">
-                    Status
-                  </DropdownMenuLabel>
-                  {STATUS_OPTIONS.map((status) => (
-                    <DropdownMenuCheckboxItem
-                      key={status}
-                      checked={statusFilter.has(status)}
-                      onSelect={(e) => e.preventDefault()}
-                      onCheckedChange={(checked) => toggleStatus(status, checked === true)}
-                    >
-                      {status}
-                    </DropdownMenuCheckboxItem>
-                  ))}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuLabel className="text-[10px] tracking-wide text-muted-foreground uppercase">
-                    Type
-                  </DropdownMenuLabel>
-                  {typeOptions.map((type) => (
-                    <DropdownMenuCheckboxItem
-                      key={type}
-                      checked={typeFilter.has(type)}
-                      onSelect={(e) => e.preventDefault()}
-                      onCheckedChange={(checked) => toggleType(type, checked === true)}
-                    >
-                      {type}
-                    </DropdownMenuCheckboxItem>
-                  ))}
-                  {mode === "connect" && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuLabel className="text-[10px] tracking-wide text-muted-foreground uppercase">
-                        Assignment
-                      </DropdownMenuLabel>
-                      <DropdownMenuItem onSelect={() => setScopeFilter(null)}>
-                        <Check className={`size-3.5 ${scopeFilter ? "invisible" : ""}`} />
-                        General (All Agents)
-                      </DropdownMenuItem>
-                      {agentLabels.map((agent) => (
-                        <DropdownMenuItem key={agent} onSelect={() => setScopeFilter(agent)}>
-                          <Check className={`size-3.5 ${scopeFilter === agent ? "" : "invisible"}`} />
-                          {agent}
-                        </DropdownMenuItem>
+                <DropdownMenuContent align="end" className="w-48">
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <span className="flex-1">Status</span>
+                      {statusFilter.size > 0 && (
+                        <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+                          {statusFilter.size}
+                        </Badge>
+                      )}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="w-44">
+                      {STATUS_OPTIONS.map((status) => (
+                        <DropdownMenuCheckboxItem
+                          key={status}
+                          checked={statusFilter.has(status)}
+                          onSelect={(e) => e.preventDefault()}
+                          onCheckedChange={(checked) => toggleStatus(status, checked === true)}
+                        >
+                          {status}
+                        </DropdownMenuCheckboxItem>
                       ))}
-                    </>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <span className="flex-1">Type</span>
+                      {typeFilter.size > 0 && (
+                        <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+                          {typeFilter.size}
+                        </Badge>
+                      )}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="w-44">
+                      {typeOptions.map((type) => (
+                        <DropdownMenuCheckboxItem
+                          key={type}
+                          checked={typeFilter.has(type)}
+                          onSelect={(e) => e.preventDefault()}
+                          onCheckedChange={(checked) => toggleType(type, checked === true)}
+                        >
+                          {type}
+                        </DropdownMenuCheckboxItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+
+                  {mode === "connect" && (
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>
+                        <span className="flex-1">Assignment</span>
+                        {scopeFilter && (
+                          <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+                            1
+                          </Badge>
+                        )}
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="w-48">
+                        <DropdownMenuItem onSelect={() => setScopeFilter(null)}>
+                          <Check className={`size-3.5 ${scopeFilter ? "invisible" : ""}`} />
+                          General (All Agents)
+                        </DropdownMenuItem>
+                        {agentLabels.map((agent) => (
+                          <DropdownMenuItem key={agent} onSelect={() => setScopeFilter(agent)}>
+                            <Check className={`size-3.5 ${scopeFilter === agent ? "" : "invisible"}`} />
+                            {agent}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
                   )}
+
                   {hasActiveFilter && (
                     <>
                       <DropdownMenuSeparator />
