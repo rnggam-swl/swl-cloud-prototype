@@ -40,7 +40,15 @@ export const SCENARIO_GROUPS: ScenarioGroup[] = [
       { id: "too-large", label: "Over the 4 MB limit", name: "Training Transcript.pdf", bytes: Math.round(6.2 * MB) },
       { id: "bad-type", label: "Unsupported file type", name: "Assets Archive.zip", bytes: Math.round(1.4 * MB) },
       { id: "empty", label: "Empty file", name: "Blank Notes.txt", bytes: 0 },
-      { id: "dupe-name", label: "Same name as an existing document", name: "SOP Test Case Sawala.pdf", bytes: Math.round(1.2 * MB) },
+    ],
+  },
+  {
+    // Also real client-side checks: the dialog asks whether to replace the
+    // existing document, keep both, or skip.
+    label: "Name already exists",
+    scenarios: [
+      { id: "dupe-name", label: "Same name as an indexed document", name: "SOP Test Case Sawala.pdf", bytes: Math.round(1.3 * MB) },
+      { id: "dupe-name-busy", label: "Same name as a document still indexing", name: "THE EFFECTS OF MOBILE SERVICE QUALITIES ON CUSTOMER REUSE INTENTION OF GOJEK SUPER APP.pdf", bytes: Math.round(2.1 * MB) },
     ],
   },
   {

@@ -12,6 +12,7 @@ import {
   type KnowledgeDocument,
   modeCopy,
   statusStyles,
+  formatDocDate,
   usePersistedDocuments,
 } from "@/lib/knowledge-data"
 import { useKnowledgeVariant } from "@/lib/knowledge-variant"
@@ -45,7 +46,19 @@ export function KnowledgeDetailPage({ mode }: { mode: KbMode }) {
     if (!doc) return
     setDocuments((prev) =>
       prev.map((d) =>
-        d.id === doc.id ? { ...d, name, content, size: formatBytes(byteLength(content)) } : d,
+        d.id === doc.id
+          ? {
+              ...d,
+              name,
+              content,
+              size: formatBytes(byteLength(content)),
+              // Only a real change to name/content counts as a modification.
+              ...((name !== d.name || content !== d.content) && {
+                updatedAt: new Date().toISOString(),
+                version: (d.version ?? 1) + 1,
+              }),
+            }
+          : d,
       ),
     )
     setEditing(false)
@@ -93,7 +106,15 @@ export function KnowledgeDetailPage({ mode }: { mode: KbMode }) {
               <MetaSeparator />
               <span>{doc.size}</span>
               <MetaSeparator />
-              <span>{doc.date}</span>
+              <span>Created at {formatDocDate(doc.createdAt, true)}</span>
+              <MetaSeparator />
+              <span>Modified at {formatDocDate(doc.updatedAt, true)}</span>
+              {(doc.version ?? 1) > 1 && (
+                <>
+                  <MetaSeparator />
+                  <span>Version {doc.version}</span>
+                </>
+              )}
               {mode === "connect" && (
                 <>
                   <MetaSeparator />

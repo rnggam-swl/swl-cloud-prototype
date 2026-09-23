@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react"
 import {
   AlertCircle,
+  AlertTriangle,
   ChevronDown,
   CircleCheckBig,
   CloudUpload,
@@ -27,7 +28,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { FAILURE_REASON_COPY, type FailureReasonCode, type KbMode } from "@/lib/knowledge-data"
+import {
+  FAILURE_REASON_COPY,
+  type FailureReasonCode,
+  type KbMode,
+  type KnowledgeDocument,
+} from "@/lib/knowledge-data"
 import { useKnowledgeVariant } from "@/lib/knowledge-variant"
 import { SCENARIO_GROUPS, type UploadScenario } from "@/lib/upload-scenarios"
 import { cn } from "@/lib/utils"
@@ -48,7 +54,10 @@ const ACCEPTED_EXTENSIONS = [
 ]
 const ACCEPT_ATTR = ACCEPTED_EXTENSIONS.map((ext) => `.${ext}`).join(",")
 
-type RowStatus = "queued" | "uploading" | "done" | "error"
+// "conflict" = same name as a document already in the knowledge base; the
+// row waits there until the user picks replace / keep both / skip.
+type RowStatus = "conflict" | "queued" | "uploading" | "done" | "error"
+type ConflictResolution = "replace" | "keep"
 
 // Rows only ever need a name and a byte count, so a simulated file and a real
 // one are the same shape here — both travel the identical UI path.
@@ -60,6 +69,11 @@ interface UploadRow {
   progress: number
   reasonCode?: FailureReasonCode
   scenario?: UploadScenario
+  /** The existing document this file's name collides with. */
+  conflictWith?: KnowledgeDocument
+  resolution?: ConflictResolution
+  /** Title to save under when it differs from the file name ("keep both"). */
+  saveAs?: string
 }
 
 export interface UploadedDocument {
@@ -70,6 +84,8 @@ export interface UploadedDocument {
   extraScopes?: string[]
   groupId?: string
   pendingFailure?: FailureReasonCode
+  /** Set when this upload replaces an existing document instead of adding one. */
+  replaceId?: string
 }
 
 function formatBytes(bytes: number): string {
@@ -87,20 +103,31 @@ function titleFromFileName(name: string): string {
   return name.replace(/\.[^.]+$/, "")
 }
 
-// Client-side checks that don't need a backend: size, extension, empty
-// content, and name collisions against what's already in this knowledge
-// base (or already queued in this same batch). Simulated files go through
-// this same function — nothing here reads file contents.
-function validateFile(
-  file: { name: string; bytes: number },
-  takenTitles: Set<string>,
-): FailureReasonCode | null {
+const titleKey = (title: string) => title.trim().toLowerCase()
+
+// Client-side checks that don't need a backend: size, extension and empty
+// content. Name collisions are handled separately in enqueue(). Simulated
+// files go through this same function — nothing here reads file contents.
+function validateFile(file: { name: string; bytes: number }): FailureReasonCode | null {
   if (file.bytes > MAX_UPLOAD_BYTES) return "file_too_large"
   const ext = file.name.split(".").pop()?.toLowerCase()
   if (!ext || !ACCEPTED_EXTENSIONS.includes(ext)) return "unsupported_type"
   if (file.bytes === 0) return "empty_file"
-  if (takenTitles.has(titleFromFileName(file.name).trim().toLowerCase())) return "duplicate_name"
   return null
+}
+
+// A document still going through indexing can't be replaced — that would
+// start a second indexing run for the same document.
+function isProcessing(doc: KnowledgeDocument) {
+  return doc.status === "Queued" || doc.status === "Indexing"
+}
+
+// "SOP Test Case (2)", "(3)", ... — first number not already taken.
+function uniqueTitle(base: string, taken: Set<string>): string {
+  for (let n = 2; ; n++) {
+    const candidate = `${base} (${n})`
+    if (!taken.has(titleKey(candidate))) return candidate
+  }
 }
 
 export function UploadDocumentDialog({
@@ -108,14 +135,14 @@ export function UploadDocumentDialog({
   open,
   onOpenChange,
   onUploaded,
-  existingTitles,
+  existingDocuments,
 }: {
   mode: KbMode
   open: boolean
   onOpenChange: (open: boolean) => void
   onUploaded: (docs: UploadedDocument[]) => void
-  /** Titles already in this knowledge base — used to catch duplicate uploads. */
-  existingTitles: string[]
+  /** Documents already in this knowledge base — used to catch name collisions. */
+  existingDocuments: KnowledgeDocument[]
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -135,7 +162,7 @@ export function UploadDocumentDialog({
           mode={mode}
           onClose={() => onOpenChange(false)}
           onUploaded={onUploaded}
-          existingTitles={existingTitles}
+          existingDocuments={existingDocuments}
         />
       </DialogContent>
     </Dialog>
@@ -146,12 +173,12 @@ function UploadForm({
   mode,
   onClose,
   onUploaded,
-  existingTitles,
+  existingDocuments,
 }: {
   mode: KbMode
   onClose: () => void
   onUploaded: (docs: UploadedDocument[]) => void
-  existingTitles: string[]
+  existingDocuments: KnowledgeDocument[]
 }) {
   const { groups } = useKnowledgeVariant()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -164,27 +191,61 @@ function UploadForm({
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)))
   }
 
+  // Title a row will be saved under — a "keep both" row saves renamed.
+  const rowTitle = (r: UploadRow) => r.saveAs ?? titleFromFileName(r.name)
+
   function enqueue(incoming: { name: string; bytes: number; scenario?: UploadScenario }[]) {
-    const takenTitles = new Set(
-      [...existingTitles, ...rows.map((r) => titleFromFileName(r.name))].map((t) =>
-        t.trim().toLowerCase(),
-      ),
-    )
+    const batchTitles = new Set(rows.filter((r) => r.status !== "error").map((r) => titleKey(rowTitle(r))))
     const next: UploadRow[] = []
     for (const item of incoming) {
-      const reasonCode = validateFile(item, takenTitles)
-      if (!reasonCode) takenTitles.add(titleFromFileName(item.name).trim().toLowerCase())
-      next.push({
-        id: crypto.randomUUID(),
-        name: item.name,
-        bytes: item.bytes,
-        status: reasonCode ? "error" : "queued",
-        progress: 0,
-        reasonCode: reasonCode ?? undefined,
-        scenario: item.scenario,
-      })
+      const key = titleKey(titleFromFileName(item.name))
+      const base = { id: crypto.randomUUID(), name: item.name, bytes: item.bytes, progress: 0, scenario: item.scenario }
+      const invalid = validateFile(item)
+      if (invalid) {
+        next.push({ ...base, status: "error", reasonCode: invalid })
+        continue
+      }
+      // Two files with the same name in one batch: nothing is saved yet to
+      // replace, so the second one is simply rejected.
+      if (batchTitles.has(key)) {
+        next.push({ ...base, status: "error", reasonCode: "duplicate_name" })
+        continue
+      }
+      batchTitles.add(key)
+      const existing = existingDocuments.find((d) => titleKey(d.name) === key)
+      next.push(existing ? { ...base, status: "conflict", conflictWith: existing } : { ...base, status: "queued" })
     }
     if (next.length > 0) setRows((prev) => [...prev, ...next])
+  }
+
+  function resolveConflicts(ids: string[], choice: ConflictResolution | "skip") {
+    if (choice === "skip") {
+      setRows((prev) => prev.filter((r) => !ids.includes(r.id)))
+      return
+    }
+    setRows((prev) => {
+      const next = [...prev]
+      for (const id of ids) {
+        const i = next.findIndex((r) => r.id === id)
+        const row = next[i]
+        if (!row || row.status !== "conflict" || !row.conflictWith) continue
+        if (choice === "replace") {
+          if (isProcessing(row.conflictWith)) continue
+          next[i] = { ...row, status: "queued", resolution: "replace" }
+        } else {
+          // Everything spoken for: existing documents plus the rest of this
+          // batch (conflict rows still hold their original name).
+          const taken = new Set(
+            [
+              ...existingDocuments.map((d) => d.name),
+              ...next.filter((r) => r.id !== id && r.status !== "error").map(rowTitle),
+            ].map(titleKey),
+          )
+          next[i] = { ...row, status: "queued", resolution: "keep", saveAs: uniqueTitle(titleFromFileName(row.name), taken) }
+        }
+      }
+      return next
+    })
   }
 
   function addFiles(files: FileList | File[]) {
@@ -262,13 +323,15 @@ function UploadForm({
   const hasUploading = rows.some(
     (r) => r.status === "uploading" || r.status === "queued",
   )
+  const conflictRows = rows.filter((r) => r.status === "conflict")
 
   function handleDone() {
     const scopeFields = resolveScopeFields(scope, groups)
     const docs: UploadedDocument[] = rows
       .filter((r) => r.status === "done")
       .map((r) => ({
-        title: titleFromFileName(r.name),
+        title: rowTitle(r),
+        replaceId: r.resolution === "replace" ? r.conflictWith?.id : undefined,
         fileType: fileTypeFromName(r.name),
         size: formatBytes(r.bytes),
         pendingFailure:
@@ -368,6 +431,25 @@ function UploadForm({
         </DropdownMenu>
       </div>
 
+      {conflictRows.length > 1 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+          <p className="text-xs text-amber-700 dark:text-amber-300">
+            {conflictRows.length} files have the same name as existing documents.
+          </p>
+          <div className="flex items-center gap-1">
+            <Button type="button" variant="outline" size="xs" onClick={() => resolveConflicts(conflictRows.map((r) => r.id), "replace")}>
+              Replace all
+            </Button>
+            <Button type="button" variant="outline" size="xs" onClick={() => resolveConflicts(conflictRows.map((r) => r.id), "keep")}>
+              Keep all
+            </Button>
+            <Button type="button" variant="ghost" size="xs" onClick={() => resolveConflicts(conflictRows.map((r) => r.id), "skip")}>
+              Skip all
+            </Button>
+          </div>
+        </div>
+      )}
+
       {rows.length > 0 && (
         <ul className="flex max-h-60 flex-col divide-y overflow-y-auto rounded-lg border">
           {rows.map((row) => (
@@ -381,6 +463,10 @@ function UploadForm({
                     {row.status === "uploading" && ` · ${row.progress}%`}
                     {row.status === "done" && " · Uploaded"}
                     {row.status === "queued" && " · Queued"}
+                    {row.status === "conflict" && " · A document with this name already exists"}
+                    {row.resolution === "replace" && row.status !== "error" &&
+                      ` · Replaces existing (v${(row.conflictWith?.version ?? 1) + 1})`}
+                    {row.resolution === "keep" && row.status !== "error" && ` · Saved as “${row.saveAs}”`}
                     {row.status === "error" && row.reasonCode
                       ? ` · ${FAILURE_REASON_COPY[row.reasonCode].message}`
                       : ""}
@@ -392,6 +478,9 @@ function UploadForm({
                   )}
                   {row.status === "done" && (
                     <CircleCheckBig className="size-4 text-emerald-500" />
+                  )}
+                  {row.status === "conflict" && (
+                    <AlertTriangle className="size-4 text-amber-500" />
                   )}
                   {row.status === "error" && (
                     <>
@@ -424,6 +513,31 @@ function UploadForm({
                 </div>
               </div>
 
+              {row.status === "conflict" && row.conflictWith && (
+                <div className="flex flex-wrap items-center gap-1 pl-6.5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="xs"
+                    disabled={isProcessing(row.conflictWith)}
+                    onClick={() => resolveConflicts([row.id], "replace")}
+                  >
+                    Replace
+                  </Button>
+                  <Button type="button" variant="outline" size="xs" onClick={() => resolveConflicts([row.id], "keep")}>
+                    Keep both
+                  </Button>
+                  <Button type="button" variant="ghost" size="xs" onClick={() => resolveConflicts([row.id], "skip")}>
+                    Skip
+                  </Button>
+                  {isProcessing(row.conflictWith) && (
+                    <span className="text-[11px] text-muted-foreground">
+                      Can’t replace while the existing document is still processing.
+                    </span>
+                  )}
+                </div>
+              )}
+
               {row.status === "uploading" && (
                 <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
                   <div
@@ -448,7 +562,7 @@ function UploadForm({
           <Button
             type="button"
             size="sm"
-            disabled={rows.length === 0 || hasUploading}
+            disabled={rows.length === 0 || hasUploading || conflictRows.length > 0}
             onClick={handleDone}
           >
             Done

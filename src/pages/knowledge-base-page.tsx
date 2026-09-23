@@ -60,6 +60,7 @@ import {
   type KnowledgeDocument,
   modeCopy,
   statusStyles,
+  formatDocDate,
   usePersistedDocuments,
 } from "@/lib/knowledge-data"
 import { useKnowledgeVariant } from "@/lib/knowledge-variant"
@@ -238,8 +239,18 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
     setDeleteOpen(false)
   }
 
-  function retryDocument(id: string) {
+  // (Re)enters a document into the demo pipeline. Clearing its scheduled
+  // keys lets a document that already went through once this session (a
+  // retry, or a replace-on-upload) be walked through again.
+  function startPipeline(id: string) {
+    for (const key of [...scheduledRef.current]) {
+      if (key.startsWith(`${id}:`)) scheduledRef.current.delete(key)
+    }
     pipelineRef.current.add(id)
+  }
+
+  function retryDocument(id: string) {
+    startPipeline(id)
     setDocuments((prev) =>
       prev.map((d) =>
         d.id === id ? { ...d, status: "Queued", failureReason: undefined } : d,
@@ -269,14 +280,10 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
   function handleCreate(draft: NewDocumentDraft) {
     const bytes = new TextEncoder().encode(draft.body).byteLength
     const size = bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`
-    const date = new Date().toLocaleDateString("en-GB", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    })
+    const now = new Date().toISOString()
 
     const id = `doc-${Date.now()}`
-    pipelineRef.current.add(id)
+    startPipeline(id)
     setDocuments((prev) => [
       {
         id,
@@ -284,7 +291,8 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
         status: "Queued",
         fileType: draft.format === "md" ? "MD" : "TXT",
         size,
-        date,
+        createdAt: now,
+        updatedAt: now,
         scope: draft.scope,
         extraScopes: draft.extraScopes,
         groupId: draft.groupId,
@@ -297,27 +305,52 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
   }
 
   function handleUploaded(uploaded: UploadedDocument[]) {
-    const date = new Date().toLocaleDateString("en-GB", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    })
+    const now = new Date().toISOString()
 
-    const created = uploaded.map((u) => ({
-      id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      name: u.title,
-      status: "Queued" as const,
-      fileType: u.fileType,
-      size: u.size,
-      date,
-      scope: u.scope,
-      extraScopes: u.extraScopes,
-      groupId: u.groupId,
-      editable: u.fileType === "MD" || u.fileType === "TXT",
-      pendingFailure: u.pendingFailure,
-    }))
-    for (const doc of created) pipelineRef.current.add(doc.id)
-    setDocuments((prev) => [...created, ...prev])
+    // Replacing keeps the existing document's id, access/scope and createdAt,
+    // swaps in the new file, bumps the version and sends it back through
+    // indexing. Everything else is added as a new document.
+    const replacements = new Map(
+      uploaded.filter((u) => u.replaceId).map((u) => [u.replaceId!, u]),
+    )
+    const created: KnowledgeDocument[] = uploaded
+      .filter((u) => !u.replaceId)
+      .map((u) => ({
+        id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name: u.title,
+        status: "Queued" as const,
+        fileType: u.fileType,
+        size: u.size,
+        createdAt: now,
+        updatedAt: now,
+        scope: u.scope,
+        extraScopes: u.extraScopes,
+        groupId: u.groupId,
+        editable: u.fileType === "MD" || u.fileType === "TXT",
+        pendingFailure: u.pendingFailure,
+      }))
+
+    for (const doc of created) startPipeline(doc.id)
+    for (const id of replacements.keys()) startPipeline(id)
+    setDocuments((prev) => [
+      ...created,
+      ...prev.map((d) => {
+        const u = replacements.get(d.id)
+        if (!u) return d
+        return {
+          ...d,
+          status: "Queued" as const,
+          fileType: u.fileType,
+          size: u.size,
+          updatedAt: now,
+          version: (d.version ?? 1) + 1,
+          editable: u.fileType === "MD" || u.fileType === "TXT",
+          content: undefined,
+          failureReason: undefined,
+          pendingFailure: u.pendingFailure,
+        }
+      }),
+    ])
     setUploadOpen(false)
   }
 
@@ -569,7 +602,9 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
                     <MetaSeparator />
                     <span>{doc.size}</span>
                     <MetaSeparator />
-                    <span>{doc.date}</span>
+                    <span>Created at {formatDocDate(doc.createdAt)}</span>
+                    <MetaSeparator />
+                    <span>Modified at {formatDocDate(doc.updatedAt)}</span>
                     {mode === "connect" && (
                       <>
                         <MetaSeparator />
@@ -676,7 +711,7 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
         open={uploadOpen}
         onOpenChange={setUploadOpen}
         onUploaded={handleUploaded}
-        existingTitles={documents.map((d) => d.name)}
+        existingDocuments={documents}
       />
 
       <ManageAccessDialog

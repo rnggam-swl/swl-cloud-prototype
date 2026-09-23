@@ -80,7 +80,7 @@ export const FAILURE_REASON_COPY: Record<
     retryable: true,
   },
   duplicate_name: {
-    message: "A document with this name already exists in this knowledge base.",
+    message: "Another file in this upload already has this name.",
     retryable: false,
   },
   duplicate_content: {
@@ -99,7 +99,13 @@ export interface KnowledgeDocument {
   status: DocStatus
   fileType: string
   size: string
-  date: string
+  /** ISO timestamp — when the document was first saved. Never changes. */
+  createdAt: string
+  /** ISO timestamp — last change to the document's name or content (edit or
+   * replace-on-upload). Access/scope changes deliberately don't touch it. */
+  updatedAt: string
+  /** Content revision, starting at 1; bumped whenever updatedAt is. */
+  version?: number
   scope: string
   extraScopes?: string[]
   editable?: boolean
@@ -122,7 +128,8 @@ export const initialDocuments: KnowledgeDocument[] = [
     status: "Failed",
     fileType: "PDF",
     size: "1.2 MB",
-    date: "30 Jul 2026",
+    createdAt: "2026-07-30T09:12:00+07:00",
+    updatedAt: "2026-07-30T09:12:00+07:00",
     scope: "General",
     extraScopes: ["Sales", "Support"],
     failureReason: "file_corrupt",
@@ -133,7 +140,9 @@ export const initialDocuments: KnowledgeDocument[] = [
     status: "Queued",
     fileType: "TXT",
     size: "1.2 MB",
-    date: "30 Jul 2026",
+    createdAt: "2026-07-30T09:20:00+07:00",
+    updatedAt: "2026-08-14T15:42:00+07:00",
+    version: 2,
     scope: "General",
     extraScopes: ["Sales", "Support"],
     editable: true,
@@ -146,7 +155,8 @@ export const initialDocuments: KnowledgeDocument[] = [
     status: "Indexing",
     fileType: "DOCX",
     size: "1.2 MB",
-    date: "30 Jul 2026",
+    createdAt: "2026-07-30T10:05:00+07:00",
+    updatedAt: "2026-07-30T10:05:00+07:00",
     scope: "General",
     extraScopes: ["Sales", "Support"],
   },
@@ -156,7 +166,8 @@ export const initialDocuments: KnowledgeDocument[] = [
     status: "Indexed",
     fileType: "MD",
     size: "1.2 MB",
-    date: "30 Jul 2026",
+    createdAt: "2026-07-30T10:31:00+07:00",
+    updatedAt: "2026-07-30T10:31:00+07:00",
     scope: "General",
     extraScopes: ["Sales", "Support"],
     editable: true,
@@ -169,7 +180,8 @@ export const initialDocuments: KnowledgeDocument[] = [
     status: "Indexed",
     fileType: "JSON",
     size: "1.2 MB",
-    date: "30 Jul 2026",
+    createdAt: "2026-07-30T11:02:00+07:00",
+    updatedAt: "2026-07-30T11:02:00+07:00",
     scope: "General",
     extraScopes: ["Sales", "Support"],
     content: `{
@@ -185,7 +197,8 @@ export const initialDocuments: KnowledgeDocument[] = [
     status: "Indexed",
     fileType: "PDF",
     size: "1.2 MB",
-    date: "30 Jul 2026",
+    createdAt: "2026-07-30T13:47:00+07:00",
+    updatedAt: "2026-07-30T13:47:00+07:00",
     scope: "General",
     extraScopes: ["Sales", "Support"],
   },
@@ -195,12 +208,23 @@ export const initialDocuments: KnowledgeDocument[] = [
     status: "Failed",
     fileType: "PDF",
     size: "1.2 MB",
-    date: "31 Jul 2026",
+    createdAt: "2026-07-31T08:55:00+07:00",
+    updatedAt: "2026-07-31T08:55:00+07:00",
     scope: "General",
     extraScopes: ["Sales", "Support"],
     failureReason: "duplicate_content",
   },
 ]
+
+/** "30 Jul 2026", or "30 Jul 2026, 09:12" with the time. */
+export function formatDocDate(iso: string, withTime = false): string {
+  return new Date(iso).toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    ...(withTime && { hour: "2-digit", minute: "2-digit" }),
+  })
+}
 
 export const statusStyles: Record<DocStatus, string> = {
   Indexed: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
@@ -214,10 +238,29 @@ export const statusStyles: Record<DocStatus, string> = {
 // intact across reloads without pretending there's a real API behind them.
 const STORAGE_KEY = "ajena-knowledge-documents"
 
+// Status names used before they were renamed.
+const LEGACY_STATUS: Record<string, DocStatus> = {
+  "In Queue": "Queued",
+  Running: "Indexing",
+  Completed: "Indexed",
+}
+
+// Brings documents saved by older builds up to the current shape: legacy
+// status names, and a display-only `date` ("18 Sept 2026") lifted into both
+// timestamps.
+function migrateDocument(doc: KnowledgeDocument & { date?: string }): KnowledgeDocument {
+  const status = LEGACY_STATUS[doc.status] ?? doc.status
+  if (doc.createdAt) return { ...doc, status }
+  const parsed = doc.date ? new Date(doc.date.replace("Sept", "Sep")) : new Date(NaN)
+  const iso = Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString()
+  const { date: _legacy, ...rest } = doc
+  return { ...rest, status, createdAt: iso, updatedAt: iso }
+}
+
 function loadDocuments(): KnowledgeDocument[] {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (raw) return JSON.parse(raw) as KnowledgeDocument[]
+    if (raw) return (JSON.parse(raw) as KnowledgeDocument[]).map(migrateDocument)
   } catch {
     // Malformed or inaccessible storage — fall back to the seed data below.
   }
