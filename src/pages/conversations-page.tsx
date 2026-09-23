@@ -6,7 +6,6 @@ import {
   MessagesSquare,
   MoreHorizontal,
   Phone,
-  PowerOff,
   Search,
   Send,
   User,
@@ -88,31 +87,18 @@ function EmptyState({
 export function ConversationsPage() {
   const [settings] = usePersistedSettings()
   const navigate = useNavigate()
-  const { enabled, whatsapp } = settings.connectWidget
-  // Integrations live in Settings → Connect → Widget; the CTAs send the user
-  // there (and ring the WhatsApp card) rather than connecting in place.
-  const goToWidgetSettings = () => navigate("/settings/connect/widget", { state: { highlight: "whatsapp" } })
 
-  if (!enabled) {
-    return (
-      <EmptyState
-        icon={PowerOff}
-        title="Ajena Connect is off"
-        description="Turn on Connect to let Ajena answer your customers on WhatsApp and see their conversations here."
-      >
-        <Button onClick={goToWidgetSettings}>Go to Connect settings</Button>
-      </EmptyState>
-    )
-  }
-
-  if (whatsapp.status !== "connected") {
+  // Enabling Ajena Connect is what connects WhatsApp. Integrations live in
+  // Settings → Connect → Widget, so the CTA sends the user there (and rings
+  // the Ajena Connect card) rather than connecting in place.
+  if (!settings.connectWidget.enabled) {
     return (
       <EmptyState
         icon={Phone}
         title="Connect WhatsApp to start chatting"
-        description="Link your WhatsApp Business number and Ajena will answer customers around the clock. Every conversation shows up here, and you can take over anytime."
+        description="Turn on Ajena Connect and Ajena will answer your customers on WhatsApp around the clock. Every conversation shows up here, and you can take over anytime."
       >
-        <Button onClick={goToWidgetSettings}>
+        <Button onClick={() => navigate("/settings/connect/widget", { state: { highlight: "connect" } })}>
           <Phone className="size-4" />
           Connect WhatsApp
         </Button>
@@ -126,12 +112,7 @@ export function ConversationsPage() {
       <EmptyState
         icon={Inbox}
         title="No conversations yet"
-        description={
-          <>
-            Ajena is listening on <span className="font-medium text-foreground">{whatsapp.phoneNumber}</span>. Send it a
-            WhatsApp message to see your first conversation here.
-          </>
-        }
+        description="Ajena is connected to WhatsApp. Conversations will appear here as soon as a customer sends a message."
       />
     )
   }
