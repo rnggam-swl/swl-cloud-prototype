@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { ChevronRight, Layers, Plus, Search, Trash2 } from "lucide-react"
+import { Layers, Plus, Search, Trash2 } from "lucide-react"
 import { Link, useNavigate } from "react-router-dom"
 import {
   AlertDialog,
@@ -22,7 +22,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import type { KnowledgeDocument } from "@/lib/knowledge-data"
+import { formatDocDate, type KnowledgeDocument } from "@/lib/knowledge-data"
 import { type KnowledgeGroup, newGroupId, useKnowledgeVariant } from "@/lib/knowledge-variant"
 
 export const GROUPS_HREF = "/connect/knowledge/groups"
@@ -100,11 +100,14 @@ export function KnowledgeGroupsTable({
           {visibleGroups.map((g) => {
             const count = docCount(g.id)
             return (
-              <li key={g.id} className="group/row flex items-center gap-3 px-4 py-3 hover:bg-muted/40">
-                <Layers className="size-4 shrink-0 text-muted-foreground" />
-                <Link to={`${GROUPS_HREF}/${g.id}`} className="flex min-w-0 flex-1 flex-col gap-1">
-                  <span className="truncate text-sm font-medium group-hover/row:underline">{g.name}</span>
-                  <span className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+              <li key={g.id} className="flex items-center gap-3 px-4 py-3">
+                <Layers className="size-4 shrink-0 self-start text-muted-foreground mt-0.5" />
+                {/* Like the documents table, only the name opens the detail page. */}
+                <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+                  <Link to={`${GROUPS_HREF}/${g.id}`} className="w-fit max-w-full truncate text-sm font-medium hover:underline">
+                    {g.name}
+                  </Link>
+                  <div className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
                     {g.agents.length === 0 ? (
                       <span>No agents assigned</span>
                     ) : (
@@ -114,12 +117,17 @@ export function KnowledgeGroupsTable({
                         </Badge>
                       ))
                     )}
-                    <span className="mx-1 text-border">|</span>
-                    <span className="font-mono">
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs text-muted-foreground">
+                    <span>Created at {formatDocDate(g.createdAt)}</span>
+                    <span className="text-border">|</span>
+                    <span>Modified at {formatDocDate(g.updatedAt)}</span>
+                    <span className="text-border">|</span>
+                    <span>
                       {count} {count === 1 ? "document" : "documents"}
                     </span>
-                  </span>
-                </Link>
+                  </div>
+                </div>
                 <Button
                   variant="ghost"
                   size="sm"
@@ -129,7 +137,6 @@ export function KnowledgeGroupsTable({
                   <Trash2 className="size-3.5" />
                   Delete
                 </Button>
-                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
               </li>
             )
           })}

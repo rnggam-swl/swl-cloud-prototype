@@ -83,7 +83,7 @@ const STATUS_DOT_CLASS: Record<DocStatus, string> = {
 
 export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
   const copy = modeCopy[mode]
-  const { variant, groups } = useKnowledgeVariant()
+  const { variant, groups, touchGroups } = useKnowledgeVariant()
   const [settings] = usePersistedSettings()
   const [documents, setDocuments] = usePersistedDocuments()
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -242,6 +242,7 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
   function confirmDelete() {
     if (!deleteTargetIds) return
     const targets = new Set(deleteTargetIds)
+    touchGroups(documents.filter((d) => targets.has(d.id)).map((d) => d.groupId))
     setDocuments((prev) => prev.filter((d) => !targets.has(d.id)))
     // Drop deleted docs from the selection but keep anything else the user
     // had checked (a single-row delete leaves the bulk selection intact).
@@ -284,6 +285,8 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
   }
 
   function saveAccess(id: string, fields: AccessSaveFields) {
+    const before = documents.find((d) => d.id === id)?.groupId
+    if (before !== fields.groupId) touchGroups([before, fields.groupId])
     setDocuments((prev) => prev.map((d) => (d.id === id ? { ...d, ...fields } : d)))
   }
 
@@ -311,6 +314,7 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
       },
       ...prev,
     ])
+    touchGroups([draft.groupId])
     setWriteOpen(false)
   }
 
@@ -340,6 +344,7 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
         pendingFailure: u.pendingFailure,
       }))
 
+    touchGroups(created.map((d) => d.groupId))
     for (const doc of created) startPipeline(doc.id)
     for (const id of replacements.keys()) startPipeline(id)
     setDocuments((prev) => [

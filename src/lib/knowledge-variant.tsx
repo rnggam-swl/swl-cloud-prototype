@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react"
+import { createContext, useCallback, useContext, useEffect, useState } from "react"
 
 // Three competing product directions for "which agents can see this
 // document" — kept switchable in the prototype so the team can compare them
@@ -44,6 +44,12 @@ export interface KnowledgeGroup {
   id: string
   name: string
   agents: string[]
+  /** ISO timestamp — when the group was created. */
+  createdAt: string
+  /** ISO timestamp — last change to what the group is: its name, its agents,
+   * or which documents belong to it. Stamped automatically for name/agent
+   * changes; document moves call `touchGroups`. */
+  updatedAt: string
 }
 
 // No seed "General" group on purpose — General is the implicit ungrouped
@@ -52,8 +58,20 @@ export interface KnowledgeGroup {
 // (it would mean "only visible to General-group members," the opposite of
 // what "general knowledge" is supposed to mean).
 const DEFAULT_GROUPS: KnowledgeGroup[] = [
-  { id: "sales", name: "Sales", agents: ["Sales"] },
-  { id: "support", name: "Support", agents: ["Support", "Billing"] },
+  {
+    id: "sales",
+    name: "Sales",
+    agents: ["Sales"],
+    createdAt: "2026-07-28T10:00:00+07:00",
+    updatedAt: "2026-08-12T16:20:00+07:00",
+  },
+  {
+    id: "support",
+    name: "Support",
+    agents: ["Support", "Billing"],
+    createdAt: "2026-07-28T10:05:00+07:00",
+    updatedAt: "2026-07-28T10:05:00+07:00",
+  },
 ]
 
 /** A slug id for a new group, suffixed ("sales-2") if it's already taken. */
@@ -86,7 +104,15 @@ function loadVariant(): KbVariant {
 function loadGroups(): KnowledgeGroup[] {
   try {
     const raw = window.localStorage.getItem(GROUPS_STORAGE_KEY)
-    if (raw) return JSON.parse(raw) as KnowledgeGroup[]
+    if (raw) {
+      // Groups saved before timestamps existed get "now" for both.
+      const now = new Date().toISOString()
+      return (JSON.parse(raw) as KnowledgeGroup[]).map((g) => ({
+        ...g,
+        createdAt: g.createdAt ?? now,
+        updatedAt: g.updatedAt ?? g.createdAt ?? now,
+      }))
+    }
   } catch {
     // ignore malformed storage
   }
@@ -97,8 +123,21 @@ const KnowledgeVariantContext = createContext<{
   variant: KbVariant
   setVariant: (v: KbVariant) => void
   groups: KnowledgeGroup[]
-  setGroups: React.Dispatch<React.SetStateAction<KnowledgeGroup[]>>
+  /** Creating a group may omit its timestamps; renaming it or changing its
+   * agents bumps updatedAt automatically. */
+  setGroups: (action: GroupsAction) => void
+  /** Bumps updatedAt on these groups — for document moves in or out, which
+   * live in document state this provider can't see. Falsy ids are ignored. */
+  touchGroups: (ids: (string | undefined)[]) => void
 } | null>(null)
+
+type GroupDraft = Omit<KnowledgeGroup, "createdAt" | "updatedAt"> &
+  Partial<Pick<KnowledgeGroup, "createdAt" | "updatedAt">>
+type GroupsAction = GroupDraft[] | ((prev: KnowledgeGroup[]) => GroupDraft[])
+
+function sameAgents(a: string[], b: string[]) {
+  return a.length === b.length && a.every((x) => b.includes(x))
+}
 
 export function KnowledgeVariantProvider({
   children,
@@ -106,7 +145,27 @@ export function KnowledgeVariantProvider({
   children: React.ReactNode
 }) {
   const [variant, setVariant] = useState<KbVariant>(loadVariant)
-  const [groups, setGroups] = useState<KnowledgeGroup[]>(loadGroups)
+  const [groups, setGroupsState] = useState<KnowledgeGroup[]>(loadGroups)
+
+  const setGroups = useCallback((action: GroupsAction) => {
+    setGroupsState((prev) => {
+      const next = typeof action === "function" ? action(prev) : action
+      const now = new Date().toISOString()
+      return next.map((g) => {
+        const old = prev.find((p) => p.id === g.id)
+        if (!old) return { ...g, createdAt: g.createdAt ?? now, updatedAt: g.updatedAt ?? now }
+        const changed = old.name !== g.name || !sameAgents(old.agents, g.agents)
+        return { ...g, createdAt: old.createdAt, updatedAt: changed ? now : (g.updatedAt ?? old.updatedAt) }
+      })
+    })
+  }, [])
+
+  const touchGroups = useCallback((ids: (string | undefined)[]) => {
+    const set = new Set(ids.filter(Boolean))
+    if (set.size === 0) return
+    const now = new Date().toISOString()
+    setGroupsState((prev) => prev.map((g) => (set.has(g.id) ? { ...g, updatedAt: now } : g)))
+  }, [])
 
   useEffect(() => {
     try {
@@ -126,7 +185,7 @@ export function KnowledgeVariantProvider({
 
   return (
     <KnowledgeVariantContext.Provider
-      value={{ variant, setVariant, groups, setGroups }}
+      value={{ variant, setVariant, groups, setGroups, touchGroups }}
     >
       {children}
     </KnowledgeVariantContext.Provider>

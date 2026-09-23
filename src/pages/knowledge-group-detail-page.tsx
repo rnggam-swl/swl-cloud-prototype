@@ -29,7 +29,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
-import { type KnowledgeDocument, statusStyles, usePersistedDocuments } from "@/lib/knowledge-data"
+import { type KnowledgeDocument, formatDocDate, statusStyles, usePersistedDocuments } from "@/lib/knowledge-data"
 import { useKnowledgeVariant } from "@/lib/knowledge-variant"
 import { usePersistedSettings } from "@/lib/settings-data"
 import { cn } from "@/lib/utils"
@@ -43,7 +43,7 @@ const LIST_HREF = "/connect/knowledge?tab=groups"
 export function KnowledgeGroupDetailPage() {
   const { groupId } = useParams<{ groupId: string }>()
   const navigate = useNavigate()
-  const { groups, setGroups } = useKnowledgeVariant()
+  const { groups, setGroups, touchGroups } = useKnowledgeVariant()
   const [documents, setDocuments] = usePersistedDocuments()
   const [settings] = usePersistedSettings()
   const [renaming, setRenaming] = useState(false)
@@ -86,6 +86,7 @@ export function KnowledgeGroupDetailPage() {
   }
 
   function removeDocument(id: string) {
+    touchGroups([group!.id])
     setDocuments((prev) =>
       prev.map((d) => (d.id === id ? { ...d, groupId: undefined, scope: "General", extraScopes: undefined } : d)),
     )
@@ -93,6 +94,8 @@ export function KnowledgeGroupDetailPage() {
 
   function addDocuments(ids: string[]) {
     const set = new Set(ids)
+    // The groups those documents leave change too.
+    touchGroups([group!.id, ...documents.filter((d) => set.has(d.id)).map((d) => d.groupId)])
     setDocuments((prev) =>
       prev.map((d) => (set.has(d.id) ? { ...d, groupId: group!.id, scope: group!.name, extraScopes: undefined } : d)),
     )
@@ -145,9 +148,14 @@ export function KnowledgeGroupDetailPage() {
             ) : (
               <>
                 <h1 className="truncate text-sm font-semibold">{group.name}</h1>
-                <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  Knowledge group · {group.agents.length} {group.agents.length === 1 ? "agent" : "agents"} ·{" "}
-                  {groupDocs.length} {groupDocs.length === 1 ? "document" : "documents"}
+                <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                  <span>Created at {formatDocDate(group.createdAt, true)}</span>
+                  <span className="text-border">|</span>
+                  <span>Modified at {formatDocDate(group.updatedAt, true)}</span>
+                  <span className="text-border">|</span>
+                  <span>
+                    {groupDocs.length} {groupDocs.length === 1 ? "document" : "documents"}
+                  </span>
                 </p>
               </>
             )}

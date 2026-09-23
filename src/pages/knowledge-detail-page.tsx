@@ -30,7 +30,7 @@ export function KnowledgeDetailPage({ mode }: { mode: KbMode }) {
   const { itemId } = useParams<{ itemId: string }>()
   const location = useLocation()
   const listHref = modeCopy[mode].listHref
-  const { variant, groups } = useKnowledgeVariant()
+  const { variant, groups, touchGroups } = useKnowledgeVariant()
   const [documents, setDocuments] = usePersistedDocuments()
   const [accessOpen, setAccessOpen] = useState(false)
   const [editing, setEditing] = useState(
@@ -39,6 +39,8 @@ export function KnowledgeDetailPage({ mode }: { mode: KbMode }) {
   const doc = documents.find((d) => d.id === itemId)
 
   function saveAccess(id: string, fields: AccessSaveFields) {
+    const before = documents.find((d) => d.id === id)?.groupId
+    if (before !== fields.groupId) touchGroups([before, fields.groupId])
     setDocuments((prev) => prev.map((d) => (d.id === id ? { ...d, ...fields } : d)))
   }
 
