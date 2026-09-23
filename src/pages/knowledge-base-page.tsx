@@ -1,9 +1,8 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   Activity,
   BookOpen,
   Bot,
-  Check,
   CloudUpload,
   FileType,
   Layers,
@@ -55,6 +54,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import {
+  FAILURE_REASON_COPY,
   type DocStatus,
   type KbMode,
   type KnowledgeDocument,
@@ -66,6 +66,10 @@ import { useKnowledgeVariant } from "@/lib/knowledge-variant"
 import { usePersistedSettings } from "@/lib/settings-data"
 
 const STATUS_OPTIONS: DocStatus[] = ["Queued", "Indexing", "Indexed", "Failed"]
+
+// Sentinel for the "General (All Agents)" assignment filter option — distinct
+// from real agent labels so it can be tracked in the same Set<string>.
+const GENERAL_SCOPE = "__general__"
 
 const STATUS_DOT_CLASS: Record<DocStatus, string> = {
   Queued: "bg-muted-foreground/40",
@@ -86,23 +90,70 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
   const [accessDoc, setAccessDoc] = useState<KnowledgeDocument | null>(null)
   const [accessOpen, setAccessOpen] = useState(false)
   const [groupsOpen, setGroupsOpen] = useState(false)
-  const [scopeFilter, setScopeFilter] = useState<string | null>(null)
+  const [scopeFilter, setScopeFilter] = useState<Set<string>>(new Set())
   const [statusFilter, setStatusFilter] = useState<Set<DocStatus>>(new Set())
   const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set())
 
+  // Demo scaffolding: there is no indexing backend, so documents added in
+  // this session are walked through Queued → Indexing → Indexed/Failed on a
+  // timer. Only ids registered here move, which keeps the seeded rows (one
+  // per status) parked as a static showcase of the four badge states.
+  const pipelineRef = useRef<Set<string>>(new Set())
+  const scheduledRef = useRef<Set<string>>(new Set())
+  const timersRef = useRef<number[]>([])
+
+  useEffect(() => {
+    const timers = timersRef.current
+    return () => timers.forEach(clearTimeout)
+  }, [])
+
+  useEffect(() => {
+    for (const doc of documents) {
+      if (!pipelineRef.current.has(doc.id)) continue
+      if (doc.status !== "Queued" && doc.status !== "Indexing") continue
+      const key = `${doc.id}:${doc.status}`
+      if (scheduledRef.current.has(key)) continue
+      scheduledRef.current.add(key)
+
+      const isFinalHop = doc.status === "Indexing"
+      const timer = setTimeout(() => {
+        if (isFinalHop) pipelineRef.current.delete(doc.id)
+        setDocuments((prev) =>
+          prev.map((d) => {
+            if (d.id !== doc.id) return d
+            if (!isFinalHop) return { ...d, status: "Indexing" as const }
+            return d.pendingFailure
+              ? {
+                  ...d,
+                  status: "Failed" as const,
+                  failureReason: d.pendingFailure,
+                  pendingFailure: undefined,
+                }
+              : { ...d, status: "Indexed" as const }
+          }),
+        )
+      }, isFinalHop ? 2200 : 1200)
+      timersRef.current.push(timer)
+    }
+  }, [documents, setDocuments])
+
   const agentLabels = settings.connectAgents.filter((a) => a.enabled).map((a) => a.label)
   const typeOptions = Array.from(new Set(documents.map((d) => d.fileType))).sort()
-  const hasActiveFilter = statusFilter.size > 0 || typeFilter.size > 0 || !!scopeFilter
+  const hasActiveFilter = statusFilter.size > 0 || typeFilter.size > 0 || scopeFilter.size > 0
   const activeFilterCount =
-    (statusFilter.size > 0 ? 1 : 0) + (typeFilter.size > 0 ? 1 : 0) + (scopeFilter ? 1 : 0)
+    (statusFilter.size > 0 ? 1 : 0) + (typeFilter.size > 0 ? 1 : 0) + (scopeFilter.size > 0 ? 1 : 0)
 
   const visibleDocuments = documents.filter((d) => {
     if (statusFilter.size > 0 && !statusFilter.has(d.status)) return false
     if (typeFilter.size > 0 && !typeFilter.has(d.fileType)) return false
-    if (scopeFilter) {
-      if (d.groupId) {
-        if (!(groups.find((g) => g.id === d.groupId)?.agents ?? []).includes(scopeFilter)) return false
-      } else if (d.scope !== scopeFilter && !(d.extraScopes ?? []).includes(scopeFilter)) {
+    // Assignment filter is AND-match: a document must satisfy every selected
+    // agent (and/or the General criterion), not just one of them.
+    for (const scope of scopeFilter) {
+      if (scope === GENERAL_SCOPE) {
+        if (d.scope !== "General" || d.groupId) return false
+      } else if (d.groupId) {
+        if (!(groups.find((g) => g.id === d.groupId)?.agents ?? []).includes(scope)) return false
+      } else if (d.scope !== scope && !(d.extraScopes ?? []).includes(scope)) {
         return false
       }
     }
@@ -127,10 +178,19 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
     })
   }
 
+  function toggleScope(scope: string, checked: boolean) {
+    setScopeFilter((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(scope)
+      else next.delete(scope)
+      return next
+    })
+  }
+
   function clearFilters() {
     setStatusFilter(new Set())
     setTypeFilter(new Set())
-    setScopeFilter(null)
+    setScopeFilter(new Set())
   }
 
   const selectedCount = selectedIds.size
@@ -166,8 +226,11 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
   }
 
   function retryDocument(id: string) {
+    pipelineRef.current.add(id)
     setDocuments((prev) =>
-      prev.map((d) => (d.id === id ? { ...d, status: "Queued" } : d)),
+      prev.map((d) =>
+        d.id === id ? { ...d, status: "Queued", failureReason: undefined } : d,
+      ),
     )
   }
 
@@ -199,9 +262,11 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
       year: "numeric",
     })
 
+    const id = `doc-${Date.now()}`
+    pipelineRef.current.add(id)
     setDocuments((prev) => [
       {
-        id: `doc-${Date.now()}`,
+        id,
         name: draft.title,
         status: "Queued",
         fileType: draft.format === "md" ? "MD" : "TXT",
@@ -225,21 +290,21 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
       year: "numeric",
     })
 
-    setDocuments((prev) => [
-      ...uploaded.map((u) => ({
-        id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        name: u.title,
-        status: "Queued" as const,
-        fileType: u.fileType,
-        size: u.size,
-        date,
-        scope: u.scope,
-        extraScopes: u.extraScopes,
-        groupId: u.groupId,
-        editable: u.fileType === "MD" || u.fileType === "TXT",
-      })),
-      ...prev,
-    ])
+    const created = uploaded.map((u) => ({
+      id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: u.title,
+      status: "Queued" as const,
+      fileType: u.fileType,
+      size: u.size,
+      date,
+      scope: u.scope,
+      extraScopes: u.extraScopes,
+      groupId: u.groupId,
+      editable: u.fileType === "MD" || u.fileType === "TXT",
+      pendingFailure: u.pendingFailure,
+    }))
+    for (const doc of created) pipelineRef.current.add(doc.id)
+    setDocuments((prev) => [...created, ...prev])
     setUploadOpen(false)
   }
 
@@ -409,22 +474,29 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
                       <DropdownMenuSubTrigger>
                         <Bot className="size-3.5 text-muted-foreground" />
                         <span className="flex-1">Assignment</span>
-                        {scopeFilter && (
+                        {scopeFilter.size > 0 && (
                           <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
-                            1
+                            {scopeFilter.size}
                           </Badge>
                         )}
                       </DropdownMenuSubTrigger>
                       <DropdownMenuSubContent className="w-48">
-                        <DropdownMenuItem onSelect={() => setScopeFilter(null)}>
-                          <Check className={`size-3.5 ${scopeFilter ? "invisible" : ""}`} />
+                        <DropdownMenuCheckboxItem
+                          checked={scopeFilter.has(GENERAL_SCOPE)}
+                          onSelect={(e) => e.preventDefault()}
+                          onCheckedChange={(checked) => toggleScope(GENERAL_SCOPE, checked === true)}
+                        >
                           General (All Agents)
-                        </DropdownMenuItem>
+                        </DropdownMenuCheckboxItem>
                         {agentLabels.map((agent) => (
-                          <DropdownMenuItem key={agent} onSelect={() => setScopeFilter(agent)}>
-                            <Check className={`size-3.5 ${scopeFilter === agent ? "" : "invisible"}`} />
+                          <DropdownMenuCheckboxItem
+                            key={agent}
+                            checked={scopeFilter.has(agent)}
+                            onSelect={(e) => e.preventDefault()}
+                            onCheckedChange={(checked) => toggleScope(agent, checked === true)}
+                          >
                             {agent}
-                          </DropdownMenuItem>
+                          </DropdownMenuCheckboxItem>
                         ))}
                       </DropdownMenuSubContent>
                     </DropdownMenuSub>
@@ -492,19 +564,25 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
                       </>
                     )}
                   </div>
+                  {doc.status === "Failed" && doc.failureReason && (
+                    <p className="text-xs text-destructive">
+                      {FAILURE_REASON_COPY[doc.failureReason].message}
+                    </p>
+                  )}
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
-                  {doc.status === "Failed" && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => retryDocument(doc.id)}
-                    >
-                      <RotateCcw className="size-3.5" />
-                      Retry
-                    </Button>
-                  )}
+                  {doc.status === "Failed" &&
+                    (!doc.failureReason || FAILURE_REASON_COPY[doc.failureReason].retryable) && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => retryDocument(doc.id)}
+                      >
+                        <RotateCcw className="size-3.5" />
+                        Retry
+                      </Button>
+                    )}
                   {doc.editable && (
                     <Button
                       asChild
@@ -584,6 +662,7 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
         open={uploadOpen}
         onOpenChange={setUploadOpen}
         onUploaded={handleUploaded}
+        existingTitles={documents.map((d) => d.name)}
       />
 
       <ManageAccessDialog

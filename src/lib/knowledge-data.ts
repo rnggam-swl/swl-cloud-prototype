@@ -3,6 +3,96 @@ import { useEffect, useState } from "react"
 export type KbMode = "crew" | "connect"
 export type DocStatus = "Indexed" | "Indexing" | "Queued" | "Failed"
 
+// Why a document ended up "Failed" — surfaced instead of one generic message
+// so the user knows whether to retry, swap the file, or rename/replace it.
+// Grouped by the stage that caught the problem: upload (the file never made
+// it in) vs. processing (it uploaded fine but couldn't be indexed).
+export type FailureReasonCode =
+  // Upload stage
+  | "upload_network_error"
+  | "upload_timeout"
+  | "upload_server_error"
+  | "file_too_large"
+  | "unsupported_type"
+  | "empty_file"
+  // Processing/indexing stage
+  | "file_corrupt"
+  | "file_password_protected"
+  | "no_extractable_text"
+  | "encoding_error"
+  | "processing_timeout"
+  | "duplicate_name"
+  | "duplicate_content"
+  | "indexing_service_unavailable"
+
+export const FAILURE_REASON_COPY: Record<
+  FailureReasonCode,
+  {
+    message: string
+    /** Whether re-running indexing on the same file can plausibly fix this —
+     * false means the file itself needs to change first, so the list/detail
+     * pages hide the "Retry" action rather than offer a fix that can't work. */
+    retryable: boolean
+  }
+> = {
+  upload_network_error: {
+    message: "Upload interrupted — check your connection and try again.",
+    retryable: true,
+  },
+  upload_timeout: {
+    message: "Upload timed out. Your connection may be slow — try again or use a smaller file.",
+    retryable: true,
+  },
+  upload_server_error: {
+    message: "We couldn't reach the server. Try again in a moment.",
+    retryable: true,
+  },
+  file_too_large: {
+    message: "Exceeds the 4 MB upload limit.",
+    retryable: false,
+  },
+  unsupported_type: {
+    message: "This file type isn't supported. Upload Markdown, Text, JSON, PDF, or Office docs.",
+    retryable: false,
+  },
+  empty_file: {
+    message: "This file is empty — nothing to upload.",
+    retryable: false,
+  },
+  file_corrupt: {
+    message: "This file appears to be corrupted and can't be opened.",
+    retryable: false,
+  },
+  file_password_protected: {
+    message: "This file is password-protected. Remove the password and re-upload.",
+    retryable: false,
+  },
+  no_extractable_text: {
+    message: "No readable text found — this may be a scanned image. Try a text-based version.",
+    retryable: false,
+  },
+  encoding_error: {
+    message: "This file's text encoding couldn't be read. Re-save it as UTF-8 and try again.",
+    retryable: false,
+  },
+  processing_timeout: {
+    message: "This document took too long to process. Try splitting it into smaller files.",
+    retryable: true,
+  },
+  duplicate_name: {
+    message: "A document with this name already exists in this knowledge base.",
+    retryable: false,
+  },
+  duplicate_content: {
+    message: "This looks like a near-duplicate of a document already in this knowledge base.",
+    retryable: false,
+  },
+  indexing_service_unavailable: {
+    message: "Indexing is temporarily unavailable. We'll retry automatically.",
+    retryable: true,
+  },
+}
+
 export interface KnowledgeDocument {
   id: string
   name: string
@@ -15,6 +105,12 @@ export interface KnowledgeDocument {
   editable?: boolean
   /** Variant C (Knowledge Groups) only — which group this document belongs to. */
   groupId?: string
+  /** Only meaningful when status is "Failed" — which case caused it. */
+  failureReason?: FailureReasonCode
+  /** Demo scaffolding — see upload-scenarios.ts. Scripts how the simulated
+   * indexing pipeline should end for this document; absent means it will
+   * reach "Indexed". Drop this once a real indexing backend exists. */
+  pendingFailure?: FailureReasonCode
   /** Mock file content used by the detail/preview page. */
   content?: string
 }
@@ -29,6 +125,7 @@ export const initialDocuments: KnowledgeDocument[] = [
     date: "30 Jul 2026",
     scope: "General",
     extraScopes: ["Sales", "Support"],
+    failureReason: "file_corrupt",
   },
   {
     id: "doc-2",
@@ -91,6 +188,17 @@ export const initialDocuments: KnowledgeDocument[] = [
     date: "30 Jul 2026",
     scope: "General",
     extraScopes: ["Sales", "Support"],
+  },
+  {
+    id: "doc-7",
+    name: "SOP Test Case Sawala (1)",
+    status: "Failed",
+    fileType: "PDF",
+    size: "1.2 MB",
+    date: "31 Jul 2026",
+    scope: "General",
+    extraScopes: ["Sales", "Support"],
+    failureReason: "duplicate_content",
   },
 ]
 

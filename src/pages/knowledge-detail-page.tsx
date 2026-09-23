@@ -7,6 +7,7 @@ import { MarkdownLite } from "@/components/markdown-lite"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
+  FAILURE_REASON_COPY,
   type KbMode,
   type KnowledgeDocument,
   modeCopy,
@@ -154,15 +155,17 @@ export function KnowledgeDetailPage({ mode }: { mode: KbMode }) {
 
 function DocumentPreview({ doc }: { doc: KnowledgeDocument }) {
   if (doc.status === "Failed") {
+    const reason = doc.failureReason ? FAILURE_REASON_COPY[doc.failureReason] : undefined
     return (
       <div className="rounded-xl border bg-card p-6 text-center">
         <FileWarning className="mx-auto size-6 text-destructive" />
         <p className="mt-2 text-sm">
-          This document failed to process and could not be indexed.
+          {reason?.message ?? "This document failed to process and could not be indexed."}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Retry indexing from the knowledge base list, or download the
-          original file below.
+          {reason && !reason.retryable
+            ? "Fix the file above, then delete this document and upload the corrected version."
+            : "Retry indexing from the knowledge base list, or download the original file below."}
         </p>
         <Button variant="outline" size="sm" className="mt-3 gap-1.5">
           <Download className="size-3.5" />

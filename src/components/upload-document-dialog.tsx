@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { Fragment, useEffect, useMemo, useRef, useState } from "react"
 import {
   AlertCircle,
+  ChevronDown,
   CircleCheckBig,
   CloudUpload,
   FileText,
+  FlaskConical,
   LoaderCircle,
   RotateCw,
   X,
@@ -17,22 +19,47 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import type { KbMode } from "@/lib/knowledge-data"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { FAILURE_REASON_COPY, type FailureReasonCode, type KbMode } from "@/lib/knowledge-data"
 import { useKnowledgeVariant } from "@/lib/knowledge-variant"
+import { SCENARIO_GROUPS, type UploadScenario } from "@/lib/upload-scenarios"
 import { cn } from "@/lib/utils"
 
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024
-const ACCEPTED_EXTENSIONS =
-  ".md,.markdown,.txt,.json,.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx"
+const ACCEPTED_EXTENSIONS = [
+  "md",
+  "markdown",
+  "txt",
+  "json",
+  "pdf",
+  "doc",
+  "docx",
+  "ppt",
+  "pptx",
+  "xls",
+  "xlsx",
+]
+const ACCEPT_ATTR = ACCEPTED_EXTENSIONS.map((ext) => `.${ext}`).join(",")
 
 type RowStatus = "queued" | "uploading" | "done" | "error"
 
+// Rows only ever need a name and a byte count, so a simulated file and a real
+// one are the same shape here — both travel the identical UI path.
 interface UploadRow {
   id: string
-  file: File
+  name: string
+  bytes: number
   status: RowStatus
   progress: number
-  errorMsg?: string
+  reasonCode?: FailureReasonCode
+  scenario?: UploadScenario
 }
 
 export interface UploadedDocument {
@@ -42,6 +69,7 @@ export interface UploadedDocument {
   scope: string
   extraScopes?: string[]
   groupId?: string
+  pendingFailure?: FailureReasonCode
 }
 
 function formatBytes(bytes: number): string {
@@ -55,10 +83,23 @@ function fileTypeFromName(name: string): string {
   return ext ? ext.toUpperCase() : "FILE"
 }
 
-function validateFile(file: File): string | null {
-  if (file.size > MAX_UPLOAD_BYTES) {
-    return `Exceeds 4 MB limit (${formatBytes(file.size)})`
-  }
+function titleFromFileName(name: string): string {
+  return name.replace(/\.[^.]+$/, "")
+}
+
+// Client-side checks that don't need a backend: size, extension, empty
+// content, and name collisions against what's already in this knowledge
+// base (or already queued in this same batch). Simulated files go through
+// this same function — nothing here reads file contents.
+function validateFile(
+  file: { name: string; bytes: number },
+  takenTitles: Set<string>,
+): FailureReasonCode | null {
+  if (file.bytes > MAX_UPLOAD_BYTES) return "file_too_large"
+  const ext = file.name.split(".").pop()?.toLowerCase()
+  if (!ext || !ACCEPTED_EXTENSIONS.includes(ext)) return "unsupported_type"
+  if (file.bytes === 0) return "empty_file"
+  if (takenTitles.has(titleFromFileName(file.name).trim().toLowerCase())) return "duplicate_name"
   return null
 }
 
@@ -67,11 +108,14 @@ export function UploadDocumentDialog({
   open,
   onOpenChange,
   onUploaded,
+  existingTitles,
 }: {
   mode: KbMode
   open: boolean
   onOpenChange: (open: boolean) => void
   onUploaded: (docs: UploadedDocument[]) => void
+  /** Titles already in this knowledge base — used to catch duplicate uploads. */
+  existingTitles: string[]
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -91,6 +135,7 @@ export function UploadDocumentDialog({
           mode={mode}
           onClose={() => onOpenChange(false)}
           onUploaded={onUploaded}
+          existingTitles={existingTitles}
         />
       </DialogContent>
     </Dialog>
@@ -101,10 +146,12 @@ function UploadForm({
   mode,
   onClose,
   onUploaded,
+  existingTitles,
 }: {
   mode: KbMode
   onClose: () => void
   onUploaded: (docs: UploadedDocument[]) => void
+  existingTitles: string[]
 }) {
   const { groups } = useKnowledgeVariant()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -117,24 +164,42 @@ function UploadForm({
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)))
   }
 
-  function addFiles(files: FileList | File[]) {
+  function enqueue(incoming: { name: string; bytes: number; scenario?: UploadScenario }[]) {
+    const takenTitles = new Set(
+      [...existingTitles, ...rows.map((r) => titleFromFileName(r.name))].map((t) =>
+        t.trim().toLowerCase(),
+      ),
+    )
     const next: UploadRow[] = []
-    for (const file of Array.from(files)) {
-      const err = validateFile(file)
+    for (const item of incoming) {
+      const reasonCode = validateFile(item, takenTitles)
+      if (!reasonCode) takenTitles.add(titleFromFileName(item.name).trim().toLowerCase())
       next.push({
         id: crypto.randomUUID(),
-        file,
-        status: err ? "error" : "queued",
+        name: item.name,
+        bytes: item.bytes,
+        status: reasonCode ? "error" : "queued",
         progress: 0,
-        errorMsg: err ?? undefined,
+        reasonCode: reasonCode ?? undefined,
+        scenario: item.scenario,
       })
     }
     if (next.length > 0) setRows((prev) => [...prev, ...next])
   }
 
+  function addFiles(files: FileList | File[]) {
+    enqueue(Array.from(files).map((f) => ({ name: f.name, bytes: f.size })))
+  }
+
+  function addScenario(scenario: UploadScenario) {
+    enqueue([{ name: scenario.name, bytes: scenario.bytes, scenario }])
+  }
+
   // Simulated upload: no backend behind this prototype yet, so each queued
-  // row just animates a progress bar to completion instead of doing a real
-  // network transfer.
+  // row just animates a progress bar instead of doing a real network
+  // transfer. A row carrying an "upload" scenario stalls partway and fails
+  // with that scenario's reason, so the interrupted-transfer cases (lost
+  // connection, timeout, server down) can be shown without a server.
   useEffect(() => {
     for (const row of rows) {
       if (row.status !== "queued") continue
@@ -142,13 +207,23 @@ function UploadForm({
       inFlightRef.current.add(row.id)
       updateRow(row.id, { status: "uploading", progress: 0 })
 
+      const failAt =
+        row.scenario?.failStage === "upload" ? 40 + Math.random() * 30 : Infinity
       let pct = 0
       const timer = setInterval(() => {
         pct = Math.min(100, pct + 20 + Math.random() * 20)
-        if (pct >= 100) {
+        if (pct >= failAt) {
           clearInterval(timer)
-          updateRow(row.id, { status: "done", progress: 100 })
           inFlightRef.current.delete(row.id)
+          updateRow(row.id, {
+            status: "error",
+            progress: Math.round(failAt),
+            reasonCode: row.scenario?.reason,
+          })
+        } else if (pct >= 100) {
+          clearInterval(timer)
+          inFlightRef.current.delete(row.id)
+          updateRow(row.id, { status: "done", progress: 100 })
         } else {
           updateRow(row.id, { progress: Math.round(pct) })
         }
@@ -174,8 +249,10 @@ function UploadForm({
     setRows((prev) => prev.filter((r) => r.id !== id))
   }
 
+  // Retrying drops the scripted failure: a second attempt at a dropped
+  // connection is exactly the case where retry is supposed to work.
   function retryRow(id: string) {
-    updateRow(id, { status: "queued", progress: 0, errorMsg: undefined })
+    updateRow(id, { status: "queued", progress: 0, reasonCode: undefined, scenario: undefined })
   }
 
   const doneCount = useMemo(
@@ -191,9 +268,11 @@ function UploadForm({
     const docs: UploadedDocument[] = rows
       .filter((r) => r.status === "done")
       .map((r) => ({
-        title: r.file.name.replace(/\.[^.]+$/, ""),
-        fileType: fileTypeFromName(r.file.name),
-        size: formatBytes(r.file.size),
+        title: titleFromFileName(r.name),
+        fileType: fileTypeFromName(r.name),
+        size: formatBytes(r.bytes),
+        pendingFailure:
+          r.scenario?.failStage === "processing" ? r.scenario.reason : undefined,
         ...scopeFields,
       }))
     onUploaded(docs)
@@ -210,7 +289,7 @@ function UploadForm({
         ref={inputRef}
         type="file"
         multiple
-        accept={ACCEPTED_EXTENSIONS}
+        accept={ACCEPT_ATTR}
         className="sr-only"
         onChange={onInputChange}
       />
@@ -254,6 +333,41 @@ function UploadForm({
         </Button>
       </div>
 
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed bg-muted/30 px-3 py-2">
+        <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <FlaskConical className="size-3.5 shrink-0" />
+          Prototype — simulate a file condition instead of uploading a real one.
+        </p>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="outline" size="sm" className="shrink-0">
+              Pick a scenario
+              <ChevronDown className="size-3.5 text-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-72">
+            {SCENARIO_GROUPS.map((group, i) => (
+              <Fragment key={group.label}>
+                {i > 0 && <DropdownMenuSeparator />}
+                <DropdownMenuLabel className="text-[10px] tracking-wide text-muted-foreground uppercase">
+                  {group.label}
+                </DropdownMenuLabel>
+                {group.scenarios.map((scenario) => (
+                  <DropdownMenuItem
+                    key={scenario.id}
+                    onSelect={() => addScenario(scenario)}
+                    className="flex-col items-start gap-0.5"
+                  >
+                    <span className="text-sm">{scenario.label}</span>
+                    <span className="text-[11px] text-muted-foreground">{scenario.name}</span>
+                  </DropdownMenuItem>
+                ))}
+              </Fragment>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
       {rows.length > 0 && (
         <ul className="flex max-h-60 flex-col divide-y overflow-y-auto rounded-lg border">
           {rows.map((row) => (
@@ -261,14 +375,14 @@ function UploadForm({
               <div className="flex items-center gap-2.5">
                 <FileText className="size-4 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{row.file.name}</p>
+                  <p className="truncate text-sm font-medium">{row.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    {formatBytes(row.file.size)}
+                    {formatBytes(row.bytes)}
                     {row.status === "uploading" && ` · ${row.progress}%`}
                     {row.status === "done" && " · Uploaded"}
                     {row.status === "queued" && " · Queued"}
-                    {(row.status === "error" || row.errorMsg) && row.errorMsg
-                      ? ` · ${row.errorMsg}`
+                    {row.status === "error" && row.reasonCode
+                      ? ` · ${FAILURE_REASON_COPY[row.reasonCode].message}`
                       : ""}
                   </p>
                 </div>
@@ -282,16 +396,18 @@ function UploadForm({
                   {row.status === "error" && (
                     <>
                       <AlertCircle className="size-4 text-destructive" />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={() => retryRow(row.id)}
-                        title="Retry"
-                      >
-                        <RotateCw />
-                        <span className="sr-only">Retry</span>
-                      </Button>
+                      {(!row.reasonCode || FAILURE_REASON_COPY[row.reasonCode].retryable) && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-xs"
+                          onClick={() => retryRow(row.id)}
+                          title="Retry"
+                        >
+                          <RotateCw />
+                          <span className="sr-only">Retry</span>
+                        </Button>
+                      )}
                     </>
                   )}
                   <Button
