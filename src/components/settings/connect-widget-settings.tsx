@@ -1,5 +1,6 @@
-import { useState } from "react"
-import { AtSign, MessageCircle, MessagesSquare } from "lucide-react"
+import { useEffect, useState } from "react"
+import { useLocation } from "react-router-dom"
+import { AtSign, MessageCircle, MessagesSquare, Phone } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   AlertDialog,
@@ -11,12 +12,23 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { ConnectWhatsAppDialog } from "@/components/settings/connect-whatsapp-dialog"
 import { usePersistedSettings, type ConnectChannel } from "@/lib/settings-data"
 import { cn } from "@/lib/utils"
 
-function Card({ icon: Icon, title, children }: { icon: typeof MessagesSquare; title: string; children: React.ReactNode }) {
+function Card({
+  icon: Icon,
+  title,
+  className,
+  children,
+}: {
+  icon: typeof MessagesSquare
+  title: string
+  className?: string
+  children: React.ReactNode
+}) {
   return (
-    <section className="rounded-xl border bg-card p-5 shadow-sm">
+    <section className={cn("rounded-xl border bg-card p-5 shadow-sm transition-shadow duration-500", className)}>
       <div className="flex items-center gap-2">
         <Icon className="size-4 text-muted-foreground" />
         <h2 className="text-sm font-semibold">{title}</h2>
@@ -44,6 +56,22 @@ const CHANNEL_ICON = { messenger: MessageCircle, instagram: AtSign }
 export function ConnectWidgetSettings() {
   const [settings, setSettings] = usePersistedSettings()
   const [pendingRemove, setPendingRemove] = useState<ConnectChannel | null>(null)
+  const [connectWaOpen, setConnectWaOpen] = useState(false)
+  const [confirmWaDisconnect, setConfirmWaDisconnect] = useState(false)
+
+  // Arriving from the Conversations empty-state CTA: briefly ring the
+  // WhatsApp card so the user notices where integrations live.
+  const location = useLocation()
+  const [highlightWa, setHighlightWa] = useState(
+    (location.state as { highlight?: string } | null)?.highlight === "whatsapp",
+  )
+  useEffect(() => {
+    if (!highlightWa) return
+    const t = window.setTimeout(() => setHighlightWa(false), 2000)
+    return () => window.clearTimeout(t)
+  }, [highlightWa])
+
+  const whatsapp = settings.connectWidget.whatsapp
 
   function toggleConnect() {
     setSettings((prev) => ({ ...prev, connectWidget: { ...prev.connectWidget, enabled: !prev.connectWidget.enabled } }))
@@ -57,6 +85,13 @@ export function ConnectWidgetSettings() {
       status: "connected",
     }
     setSettings((prev) => ({ ...prev, connectWidget: { ...prev.connectWidget, channels: [...prev.connectWidget.channels, channel] } }))
+  }
+
+  function disconnectWhatsApp() {
+    setSettings((prev) => ({
+      ...prev,
+      connectWidget: { ...prev.connectWidget, whatsapp: { status: "disconnected", phoneNumber: "", displayName: "" } },
+    }))
   }
 
   function disconnectChannel(id: string) {
@@ -76,6 +111,42 @@ export function ConnectWidgetSettings() {
           Turns the WhatsApp assistant, its staff inbox, and the channels below on or off for this organization.
         </p>
       </Card>
+
+      {settings.connectWidget.enabled && (
+        <Card icon={Phone} title="WhatsApp" className={cn(highlightWa && "ring-2 ring-primary/40")}>
+          <p className="text-xs text-muted-foreground">
+            The WhatsApp Business number customers message. Conversations appear in Connect → Conversations.
+          </p>
+
+          {whatsapp.status === "connected" ? (
+            <div className="mt-3 flex items-center gap-2.5 rounded-lg border px-3 py-2 text-sm">
+              <Phone className="size-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate">
+                {whatsapp.displayName}
+                <span className="ml-1.5 text-xs text-muted-foreground">{whatsapp.phoneNumber}</span>
+              </span>
+              <span className="shrink-0 rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                Connected
+              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 shrink-0 px-2 text-xs text-muted-foreground hover:text-destructive"
+                onClick={() => setConfirmWaDisconnect(true)}
+              >
+                Disconnect
+              </Button>
+            </div>
+          ) : (
+            <>
+              <p className="mt-3 text-xs text-muted-foreground">No WhatsApp number connected yet.</p>
+              <Button size="sm" className="mt-3" onClick={() => setConnectWaOpen(true)}>
+                Connect WhatsApp
+              </Button>
+            </>
+          )}
+        </Card>
+      )}
 
       {settings.connectWidget.enabled && (
         <Card icon={MessageCircle} title="Messenger & Instagram">
@@ -108,6 +179,29 @@ export function ConnectWidgetSettings() {
           </Button>
         </Card>
       )}
+
+      <ConnectWhatsAppDialog open={connectWaOpen} onOpenChange={setConnectWaOpen} />
+
+      <AlertDialog open={confirmWaDisconnect} onOpenChange={setConfirmWaDisconnect}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Disconnect WhatsApp?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Customers messaging {whatsapp.phoneNumber || "this number"} will no longer be answered by Ajena.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              className="border-transparent bg-destructive text-white hover:bg-destructive/90"
+              onClick={disconnectWhatsApp}
+            >
+              Disconnect
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={pendingRemove !== null} onOpenChange={(open) => !open && setPendingRemove(null)}>
         <AlertDialogContent>

@@ -88,8 +88,15 @@ export interface ConnectChannel {
   status: "connected"
 }
 
+export interface ConnectWhatsApp {
+  status: "disconnected" | "connected"
+  phoneNumber: string
+  displayName: string
+}
+
 export interface ConnectWidgetState {
   enabled: boolean
+  whatsapp: ConnectWhatsApp
   channels: ConnectChannel[]
 }
 
@@ -164,7 +171,11 @@ const initialState: SettingsState = {
     historyMaxTurns: null,
     staffNotifyEmail: "",
   },
-  connectWidget: { enabled: true, channels: [] },
+  connectWidget: {
+    enabled: true,
+    whatsapp: { status: "disconnected", phoneNumber: "", displayName: "" },
+    channels: [],
+  },
   tools: [
     {
       name: "order_lookup",
@@ -187,7 +198,12 @@ const STORAGE_KEY = "ajena-settings"
 function loadState(): SettingsState {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (raw) return { ...initialState, ...(JSON.parse(raw) as SettingsState) }
+    if (raw) {
+      const saved = JSON.parse(raw) as SettingsState
+      // connectWidget is merged one level deep so settings saved before the
+      // WhatsApp field existed still pick up its default.
+      return { ...initialState, ...saved, connectWidget: { ...initialState.connectWidget, ...saved.connectWidget } }
+    }
   } catch {
     // Malformed or inaccessible storage — fall back to the seed data below.
   }

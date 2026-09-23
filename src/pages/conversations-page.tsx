@@ -1,17 +1,23 @@
+import { useNavigate } from "react-router-dom"
 import {
   Bot,
+  Inbox,
   MessageCircle,
   MessagesSquare,
   MoreHorizontal,
+  Phone,
+  PowerOff,
   Search,
   Send,
   User,
   UserCog,
+  type LucideIcon,
 } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { usePersistedSettings } from "@/lib/settings-data"
 
 interface Conversation {
   id: string
@@ -54,7 +60,82 @@ function ModeBadge({ mode }: { mode: Conversation["mode"] }) {
   )
 }
 
+function EmptyState({
+  icon: Icon,
+  title,
+  description,
+  children,
+}: {
+  icon: LucideIcon
+  title: string
+  description: React.ReactNode
+  children?: React.ReactNode
+}) {
+  return (
+    <div className="flex min-h-0 flex-1 items-center justify-center p-6">
+      <div className="flex max-w-sm flex-col items-center text-center">
+        <div className="flex size-12 items-center justify-center rounded-full bg-muted">
+          <Icon className="size-5 text-muted-foreground" />
+        </div>
+        <h2 className="mt-4 text-base font-semibold">{title}</h2>
+        <p className="mt-1.5 text-sm text-muted-foreground">{description}</p>
+        {children && <div className="mt-5 flex flex-col items-center gap-2">{children}</div>}
+      </div>
+    </div>
+  )
+}
+
 export function ConversationsPage() {
+  const [settings] = usePersistedSettings()
+  const navigate = useNavigate()
+  const { enabled, whatsapp } = settings.connectWidget
+  // Integrations live in Settings → Connect → Widget; the CTAs send the user
+  // there (and ring the WhatsApp card) rather than connecting in place.
+  const goToWidgetSettings = () => navigate("/settings/connect/widget", { state: { highlight: "whatsapp" } })
+
+  if (!enabled) {
+    return (
+      <EmptyState
+        icon={PowerOff}
+        title="Ajena Connect is off"
+        description="Turn on Connect to let Ajena answer your customers on WhatsApp and see their conversations here."
+      >
+        <Button onClick={goToWidgetSettings}>Go to Connect settings</Button>
+      </EmptyState>
+    )
+  }
+
+  if (whatsapp.status !== "connected") {
+    return (
+      <EmptyState
+        icon={Phone}
+        title="Connect WhatsApp to start chatting"
+        description="Link your WhatsApp Business number and Ajena will answer customers around the clock. Every conversation shows up here, and you can take over anytime."
+      >
+        <Button onClick={goToWidgetSettings}>
+          <Phone className="size-4" />
+          Connect WhatsApp
+        </Button>
+        <p className="text-xs text-muted-foreground">Integrations are managed in Settings → Connect → Widget.</p>
+      </EmptyState>
+    )
+  }
+
+  if (conversations.length === 0) {
+    return (
+      <EmptyState
+        icon={Inbox}
+        title="No conversations yet"
+        description={
+          <>
+            Ajena is listening on <span className="font-medium text-foreground">{whatsapp.phoneNumber}</span>. Send it a
+            WhatsApp message to see your first conversation here.
+          </>
+        }
+      />
+    )
+  }
+
   const active = conversations[0]
 
   return (
