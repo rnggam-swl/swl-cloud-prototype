@@ -8,7 +8,7 @@ import {
 } from "@/lib/knowledge-variant"
 import { cn } from "@/lib/utils"
 
-const ORDER: KbVariant[] = ["a", "b", "c"]
+const ORDER: KbVariant[] = ["a", "b", "c", "d"]
 
 export function VariantSwitcher() {
   const { variant, setVariant } = useKnowledgeVariant()

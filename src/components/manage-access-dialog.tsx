@@ -11,7 +11,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import type { KnowledgeDocument } from "@/lib/knowledge-data"
-import { useKnowledgeVariant } from "@/lib/knowledge-variant"
+import { isGroupVariant, useKnowledgeVariant } from "@/lib/knowledge-variant"
 import { usePersistedSettings } from "@/lib/settings-data"
 
 export interface AccessSaveFields {
@@ -52,7 +52,7 @@ export function ManageAccessDialog({
             that document's current access, instead of syncing a prop change
             into state via an effect. */}
         {doc &&
-          (variant === "c" ? (
+          (isGroupVariant(variant) ? (
             <GroupAccessForm
               key={doc.id}
               doc={doc}

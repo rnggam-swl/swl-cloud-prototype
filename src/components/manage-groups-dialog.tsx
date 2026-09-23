@@ -12,19 +12,10 @@ import {
 } from "@/components/ui/dialog"
 import {
   type KnowledgeGroup,
+  newGroupId,
   useKnowledgeVariant,
 } from "@/lib/knowledge-variant"
 import { usePersistedSettings } from "@/lib/settings-data"
-
-function slugify(name: string): string {
-  return (
-    name
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "") || "group"
-  )
-}
 
 // Variant C: the groups themselves are a first-class thing to manage, not
 // just a fixed dropdown — create, rename, re-assign agents, or retire a
@@ -61,13 +52,7 @@ export function ManageGroupsDialog({
         ),
       )
     } else {
-      const base = slugify(data.name)
-      const existingIds = new Set(groups.map((g) => g.id))
-      let id = base
-      let n = 2
-      while (existingIds.has(id)) {
-        id = `${base}-${n++}`
-      }
+      const id = newGroupId(data.name, groups)
       setGroups((prev) => [...prev, { id, name: data.name, agents: data.agents }])
     }
     cancelForm()

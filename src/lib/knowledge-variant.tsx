@@ -3,7 +3,7 @@ import { createContext, useContext, useEffect, useState } from "react"
 // Three competing product directions for "which agents can see this
 // document" — kept switchable in the prototype so the team can compare them
 // live with stakeholders instead of arguing over static mocks.
-export type KbVariant = "a" | "b" | "c"
+export type KbVariant = "a" | "b" | "c" | "d"
 
 export const VARIANT_INFO: Record<
   KbVariant,
@@ -24,6 +24,17 @@ export const VARIANT_INFO: Record<
     description:
       "Documents belong to one named group (e.g. Sales, Support). Agents subscribe to groups instead of individual documents.",
   },
+  d: {
+    label: "D · Knowledge Groups (Groups tab)",
+    description:
+      "Same model as C, but groups are managed on their own tab next to Knowledge, with a detail page per group for its agents and documents.",
+  },
+}
+
+/** C and D share the Knowledge Groups model — they differ only in where
+ * groups are managed (a dialog vs. their own tab and detail page). */
+export function isGroupVariant(variant: KbVariant): boolean {
+  return variant === "c" || variant === "d"
 }
 
 // The agent roster itself now lives in Settings → Connect → Agents
@@ -45,13 +56,27 @@ const DEFAULT_GROUPS: KnowledgeGroup[] = [
   { id: "support", name: "Support", agents: ["Support", "Billing"] },
 ]
 
+/** A slug id for a new group, suffixed ("sales-2") if it's already taken. */
+export function newGroupId(name: string, existing: KnowledgeGroup[]): string {
+  const base =
+    name
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "group"
+  const taken = new Set(existing.map((g) => g.id))
+  let id = base
+  for (let n = 2; taken.has(id); n++) id = `${base}-${n}`
+  return id
+}
+
 const VARIANT_STORAGE_KEY = "ajena-kb-variant"
 const GROUPS_STORAGE_KEY = "ajena-kb-groups"
 
 function loadVariant(): KbVariant {
   try {
     const raw = window.localStorage.getItem(VARIANT_STORAGE_KEY)
-    if (raw === "a" || raw === "b" || raw === "c") return raw
+    if (raw === "a" || raw === "b" || raw === "c" || raw === "d") return raw
   } catch {
     // ignore
   }

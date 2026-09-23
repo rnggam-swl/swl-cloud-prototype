@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import {
   type KnowledgeGroup,
+  isGroupVariant,
   useKnowledgeVariant,
 } from "@/lib/knowledge-variant"
 import { usePersistedSettings } from "@/lib/settings-data"
@@ -63,7 +64,7 @@ export function AgentScopeControl({
 
   if (variant === "b") return null
 
-  if (variant === "c") {
+  if (isGroupVariant(variant)) {
     const group = groups.find((g) => g.id === value.groupId)
     return (
       <DropdownMenu>

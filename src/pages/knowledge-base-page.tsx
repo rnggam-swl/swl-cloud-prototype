@@ -15,7 +15,7 @@ import {
   Trash2,
   Users,
 } from "lucide-react"
-import { Link } from "react-router-dom"
+import { Link, useSearchParams } from "react-router-dom"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,6 +27,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { ManageAccessDialog, type AccessSaveFields } from "@/components/manage-access-dialog"
+import { KnowledgeGroupsTable } from "@/components/knowledge-groups-table"
 import { ManageGroupsDialog } from "@/components/manage-groups-dialog"
 import { DocScopeTag, MetaSeparator } from "@/components/knowledge-meta"
 import {
@@ -53,6 +54,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   FAILURE_REASON_COPY,
   type DocStatus,
@@ -101,6 +103,14 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
   const [accessDoc, setAccessDoc] = useState<KnowledgeDocument | null>(null)
   const [accessOpen, setAccessOpen] = useState(false)
   const [groupsOpen, setGroupsOpen] = useState(false)
+
+  // Variant D moves group management onto its own tab. The tab lives in the
+  // URL so returning from a group's detail page lands back on Groups.
+  const showGroupsTab = mode === "connect" && variant === "d"
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab = searchParams.get("tab") === "groups" ? "groups" : "knowledge"
+  const setTab = (value: string) =>
+    setSearchParams(value === "groups" ? { tab: "groups" } : {}, { replace: true })
   const [scopeFilter, setScopeFilter] = useState<Set<string>>(new Set())
   const [statusFilter, setStatusFilter] = useState<Set<DocStatus>>(new Set())
   const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set())
@@ -354,6 +364,310 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
     setUploadOpen(false)
   }
 
+  const knowledgeTab = (
+    <>
+      <section className="flex flex-col gap-4 rounded-xl border p-5">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <BookOpen className="size-4 shrink-0" />
+            <h2 className="text-sm font-semibold">Add Knowledge</h2>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Upload a file — Markdown, plain text, JSON, PDF, or Office docs
+            up to 4 MB — or write one here directly. AI Search
+            auto-extracts and indexes content within ~5–30 seconds.
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="lg"
+            onClick={() => setUploadOpen(true)}
+          >
+            <CloudUpload className="size-4" />
+            Upload Document
+          </Button>
+          <Button
+            variant="outline"
+            size="lg"
+            onClick={() => setWriteOpen(true)}
+          >
+            <PenLine className="size-4" />
+            Write a Document
+          </Button>
+        </div>
+      </section>
+
+      <section className="flex flex-col rounded-xl border">
+        <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3">
+          <Checkbox
+            checked={headerChecked}
+            onCheckedChange={(checked) => toggleAll(checked === true)}
+            aria-label={
+              selectedCount === 0 ? "Select all documents" : "Clear selection"
+            }
+          />
+          <h2 className="text-sm font-semibold">
+            Documents ({visibleDocuments.length})
+          </h2>
+
+          <div className="ml-auto flex flex-wrap items-center gap-2">
+            {selectedCount > 0 && (
+              <Button
+                size="lg"
+                onClick={() => requestDelete([...selectedIds])}
+                className="border-transparent bg-destructive text-white hover:bg-destructive/90"
+              >
+                <Trash2 className="size-4" />
+                Delete ({selectedCount})
+              </Button>
+            )}
+
+            {hasActiveFilter && (
+              <Button variant="ghost" size="lg" onClick={clearFilters}>
+                <RotateCcw className="size-3.5" />
+                Reset
+              </Button>
+            )}
+
+            <div className="relative">
+              <Input
+                placeholder="Search..."
+                className="h-9 w-48 pr-8 text-sm"
+              />
+              <Search className="absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            </div>
+
+            {mode === "connect" && variant === "c" && (
+              <Button
+                variant="outline"
+                size="lg"
+                onClick={() => setGroupsOpen(true)}
+              >
+                <Layers className="size-3.5" />
+                Manage Groups
+              </Button>
+            )}
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant={activeFilterCount > 0 ? "secondary" : "outline"} size="lg">
+                  <ListFilter className="size-3.5" />
+                  Filter
+                  {activeFilterCount > 0 && (
+                    <Badge variant="outline" className="ml-0.5 px-1.5 py-0 text-[10px]">
+                      {activeFilterCount}
+                    </Badge>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <Activity className="size-3.5 text-muted-foreground" />
+                    <span className="flex-1">Status</span>
+                    {statusFilter.size > 0 && (
+                      <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+                        {statusFilter.size}
+                      </Badge>
+                    )}
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="w-44">
+                    {STATUS_OPTIONS.map((status) => (
+                      <DropdownMenuCheckboxItem
+                        key={status}
+                        checked={statusFilter.has(status)}
+                        onSelect={(e) => e.preventDefault()}
+                        onCheckedChange={(checked) => toggleStatus(status, checked === true)}
+                      >
+                        <span className={`size-2 shrink-0 rounded-full ${STATUS_DOT_CLASS[status]}`} />
+                        {status}
+                      </DropdownMenuCheckboxItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <FileType className="size-3.5 text-muted-foreground" />
+                    <span className="flex-1">Type</span>
+                    {typeFilter.size > 0 && (
+                      <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+                        {typeFilter.size}
+                      </Badge>
+                    )}
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="w-44">
+                    {typeOptions.map((type) => (
+                      <DropdownMenuCheckboxItem
+                        key={type}
+                        checked={typeFilter.has(type)}
+                        onSelect={(e) => e.preventDefault()}
+                        onCheckedChange={(checked) => toggleType(type, checked === true)}
+                      >
+                        {type}
+                      </DropdownMenuCheckboxItem>
+                    ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
+
+                {mode === "connect" && (
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <Bot className="size-3.5 text-muted-foreground" />
+                      <span className="flex-1">Assignment</span>
+                      {scopeFilter.size > 0 && (
+                        <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+                          {scopeFilter.size}
+                        </Badge>
+                      )}
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="w-48">
+                      <DropdownMenuCheckboxItem
+                        checked={scopeFilter.has(GENERAL_SCOPE)}
+                        onSelect={(e) => e.preventDefault()}
+                        onCheckedChange={(checked) => toggleScope(GENERAL_SCOPE, checked === true)}
+                      >
+                        General (All Agents)
+                      </DropdownMenuCheckboxItem>
+                      {agentLabels.map((agent) => (
+                        <DropdownMenuCheckboxItem
+                          key={agent}
+                          checked={scopeFilter.has(agent)}
+                          onSelect={(e) => e.preventDefault()}
+                          onCheckedChange={(checked) => toggleScope(agent, checked === true)}
+                        >
+                          {agent}
+                        </DropdownMenuCheckboxItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                )}
+
+                {hasActiveFilter && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onSelect={clearFilters}>Clear filters</DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button variant="outline" size="lg">
+              <RefreshCw className="size-3.5" />
+              Refresh
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex flex-col divide-y">
+          {visibleDocuments.length === 0 && (
+            <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+              {hasActiveFilter
+                ? "No documents match the selected filters."
+                : "No documents yet."}
+            </p>
+          )}
+          {visibleDocuments.map((doc) => (
+            <div
+              key={doc.id}
+              className="flex items-center gap-3 px-4 py-3.5"
+            >
+              <Checkbox
+                checked={selectedIds.has(doc.id)}
+                onCheckedChange={(checked) =>
+                  toggleOne(doc.id, checked === true)
+                }
+                aria-label={`Select ${doc.name}`}
+              />
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Link
+                    to={`/${mode}/knowledge/${doc.id}`}
+                    className="truncate text-sm font-medium hover:underline"
+                  >
+                    {doc.name}
+                  </Link>
+                  <Badge className={statusStyles[doc.status]}>
+                    {doc.status}
+                  </Badge>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs text-muted-foreground">
+                  <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase">
+                    {doc.fileType}
+                  </span>
+                  <MetaSeparator />
+                  <span>{doc.size}</span>
+                  <MetaSeparator />
+                  <span>Created at {formatDocDate(doc.createdAt)}</span>
+                  <MetaSeparator />
+                  <span>Modified at {formatDocDate(doc.updatedAt)}</span>
+                  {mode === "connect" && (
+                    <>
+                      <MetaSeparator />
+                      <DocScopeTag doc={doc} variant={variant} groups={groups} />
+                    </>
+                  )}
+                </div>
+                {doc.status === "Failed" && doc.failureReason && (
+                  <p className="text-xs text-destructive">
+                    {FAILURE_REASON_COPY[doc.failureReason].message}
+                  </p>
+                )}
+              </div>
+              <div className="flex shrink-0 items-center gap-1">
+                {doc.status === "Failed" &&
+                  (!doc.failureReason || FAILURE_REASON_COPY[doc.failureReason].retryable) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => retryDocument(doc.id)}
+                    >
+                      <RotateCcw className="size-3.5" />
+                      Retry
+                    </Button>
+                  )}
+                {doc.editable && (
+                  <Button
+                    asChild
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <Link to={`/${mode}/knowledge/${doc.id}`} state={{ autoEdit: true }}>
+                      <Pencil className="size-3.5" />
+                      Edit
+                    </Link>
+                  </Button>
+                )}
+                {mode === "connect" && variant === "b" && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={() => openManageAccess(doc)}
+                  >
+                    <Users className="size-3.5" />
+                    Manage Access
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground hover:text-destructive"
+                  onClick={() => requestDelete([doc.id])}
+                >
+                  <Trash2 className="size-3.5" />
+                  Delete
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+    </>
+  )
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <div className="flex flex-1 flex-col gap-6 px-6 py-6">
@@ -370,305 +684,28 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
           <p className="text-sm text-muted-foreground">{copy.description}</p>
         </div>
 
-        <section className="flex flex-col gap-4 rounded-xl border p-5">
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center gap-2">
-              <BookOpen className="size-4 shrink-0" />
-              <h2 className="text-sm font-semibold">Add Knowledge</h2>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Upload a file — Markdown, plain text, JSON, PDF, or Office docs
-              up to 4 MB — or write one here directly. AI Search
-              auto-extracts and indexes content within ~5–30 seconds.
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="lg"
-              onClick={() => setUploadOpen(true)}
-            >
-              <CloudUpload className="size-4" />
-              Upload Document
-            </Button>
-            <Button
-              variant="outline"
-              size="lg"
-              onClick={() => setWriteOpen(true)}
-            >
-              <PenLine className="size-4" />
-              Write a Document
-            </Button>
-          </div>
-        </section>
-
-        <section className="flex flex-col rounded-xl border">
-          <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3">
-            <Checkbox
-              checked={headerChecked}
-              onCheckedChange={(checked) => toggleAll(checked === true)}
-              aria-label={
-                selectedCount === 0 ? "Select all documents" : "Clear selection"
-              }
-            />
-            <h2 className="text-sm font-semibold">
-              Documents ({visibleDocuments.length})
-            </h2>
-
-            <div className="ml-auto flex flex-wrap items-center gap-2">
-              {selectedCount > 0 && (
-                <Button
-                  size="lg"
-                  onClick={() => requestDelete([...selectedIds])}
-                  className="border-transparent bg-destructive text-white hover:bg-destructive/90"
-                >
-                  <Trash2 className="size-4" />
-                  Delete ({selectedCount})
-                </Button>
-              )}
-
-              {hasActiveFilter && (
-                <Button variant="ghost" size="lg" onClick={clearFilters}>
-                  <RotateCcw className="size-3.5" />
-                  Reset
-                </Button>
-              )}
-
-              <div className="relative">
-                <Input
-                  placeholder="Search..."
-                  className="h-9 w-48 pr-8 text-sm"
-                />
-                <Search className="absolute top-1/2 right-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              </div>
-
-              {mode === "connect" && variant === "c" && (
-                <Button
-                  variant="outline"
-                  size="lg"
-                  onClick={() => setGroupsOpen(true)}
-                >
-                  <Layers className="size-3.5" />
-                  Manage Groups
-                </Button>
-              )}
-
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant={activeFilterCount > 0 ? "secondary" : "outline"} size="lg">
-                    <ListFilter className="size-3.5" />
-                    Filter
-                    {activeFilterCount > 0 && (
-                      <Badge variant="outline" className="ml-0.5 px-1.5 py-0 text-[10px]">
-                        {activeFilterCount}
-                      </Badge>
-                    )}
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-48">
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger>
-                      <Activity className="size-3.5 text-muted-foreground" />
-                      <span className="flex-1">Status</span>
-                      {statusFilter.size > 0 && (
-                        <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
-                          {statusFilter.size}
-                        </Badge>
-                      )}
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent className="w-44">
-                      {STATUS_OPTIONS.map((status) => (
-                        <DropdownMenuCheckboxItem
-                          key={status}
-                          checked={statusFilter.has(status)}
-                          onSelect={(e) => e.preventDefault()}
-                          onCheckedChange={(checked) => toggleStatus(status, checked === true)}
-                        >
-                          <span className={`size-2 shrink-0 rounded-full ${STATUS_DOT_CLASS[status]}`} />
-                          {status}
-                        </DropdownMenuCheckboxItem>
-                      ))}
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
-
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger>
-                      <FileType className="size-3.5 text-muted-foreground" />
-                      <span className="flex-1">Type</span>
-                      {typeFilter.size > 0 && (
-                        <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
-                          {typeFilter.size}
-                        </Badge>
-                      )}
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent className="w-44">
-                      {typeOptions.map((type) => (
-                        <DropdownMenuCheckboxItem
-                          key={type}
-                          checked={typeFilter.has(type)}
-                          onSelect={(e) => e.preventDefault()}
-                          onCheckedChange={(checked) => toggleType(type, checked === true)}
-                        >
-                          {type}
-                        </DropdownMenuCheckboxItem>
-                      ))}
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
-
-                  {mode === "connect" && (
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger>
-                        <Bot className="size-3.5 text-muted-foreground" />
-                        <span className="flex-1">Assignment</span>
-                        {scopeFilter.size > 0 && (
-                          <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
-                            {scopeFilter.size}
-                          </Badge>
-                        )}
-                      </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent className="w-48">
-                        <DropdownMenuCheckboxItem
-                          checked={scopeFilter.has(GENERAL_SCOPE)}
-                          onSelect={(e) => e.preventDefault()}
-                          onCheckedChange={(checked) => toggleScope(GENERAL_SCOPE, checked === true)}
-                        >
-                          General (All Agents)
-                        </DropdownMenuCheckboxItem>
-                        {agentLabels.map((agent) => (
-                          <DropdownMenuCheckboxItem
-                            key={agent}
-                            checked={scopeFilter.has(agent)}
-                            onSelect={(e) => e.preventDefault()}
-                            onCheckedChange={(checked) => toggleScope(agent, checked === true)}
-                          >
-                            {agent}
-                          </DropdownMenuCheckboxItem>
-                        ))}
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                  )}
-
-                  {hasActiveFilter && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onSelect={clearFilters}>Clear filters</DropdownMenuItem>
-                    </>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-              <Button variant="outline" size="lg">
-                <RefreshCw className="size-3.5" />
-                Refresh
-              </Button>
-            </div>
-          </div>
-
-          <div className="flex flex-col divide-y">
-            {visibleDocuments.length === 0 && (
-              <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-                {hasActiveFilter
-                  ? "No documents match the selected filters."
-                  : "No documents yet."}
-              </p>
-            )}
-            {visibleDocuments.map((doc) => (
-              <div
-                key={doc.id}
-                className="flex items-center gap-3 px-4 py-3.5"
-              >
-                <Checkbox
-                  checked={selectedIds.has(doc.id)}
-                  onCheckedChange={(checked) =>
-                    toggleOne(doc.id, checked === true)
-                  }
-                  aria-label={`Select ${doc.name}`}
-                />
-                <div className="flex min-w-0 flex-1 flex-col gap-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Link
-                      to={`/${mode}/knowledge/${doc.id}`}
-                      className="truncate text-sm font-medium hover:underline"
-                    >
-                      {doc.name}
-                    </Link>
-                    <Badge className={statusStyles[doc.status]}>
-                      {doc.status}
-                    </Badge>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs text-muted-foreground">
-                    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase">
-                      {doc.fileType}
-                    </span>
-                    <MetaSeparator />
-                    <span>{doc.size}</span>
-                    <MetaSeparator />
-                    <span>Created at {formatDocDate(doc.createdAt)}</span>
-                    <MetaSeparator />
-                    <span>Modified at {formatDocDate(doc.updatedAt)}</span>
-                    {mode === "connect" && (
-                      <>
-                        <MetaSeparator />
-                        <DocScopeTag doc={doc} variant={variant} groups={groups} />
-                      </>
-                    )}
-                  </div>
-                  {doc.status === "Failed" && doc.failureReason && (
-                    <p className="text-xs text-destructive">
-                      {FAILURE_REASON_COPY[doc.failureReason].message}
-                    </p>
-                  )}
-                </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  {doc.status === "Failed" &&
-                    (!doc.failureReason || FAILURE_REASON_COPY[doc.failureReason].retryable) && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => retryDocument(doc.id)}
-                      >
-                        <RotateCcw className="size-3.5" />
-                        Retry
-                      </Button>
-                    )}
-                  {doc.editable && (
-                    <Button
-                      asChild
-                      variant="ghost"
-                      size="sm"
-                      className="text-muted-foreground hover:text-foreground"
-                    >
-                      <Link to={`/${mode}/knowledge/${doc.id}`} state={{ autoEdit: true }}>
-                        <Pencil className="size-3.5" />
-                        Edit
-                      </Link>
-                    </Button>
-                  )}
-                  {mode === "connect" && variant === "b" && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-muted-foreground hover:text-foreground"
-                      onClick={() => openManageAccess(doc)}
-                    >
-                      <Users className="size-3.5" />
-                      Manage Access
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-muted-foreground hover:text-destructive"
-                    onClick={() => requestDelete([doc.id])}
-                  >
-                    <Trash2 className="size-3.5" />
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
+        {showGroupsTab ? (
+          <Tabs value={tab} onValueChange={setTab} className="gap-6">
+            <TabsList>
+              <TabsTrigger value="knowledge" className="px-3">
+                <BookOpen />
+                Knowledge
+              </TabsTrigger>
+              <TabsTrigger value="groups" className="px-3">
+                <Layers />
+                Groups
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="knowledge" className="flex flex-col gap-6">
+              {knowledgeTab}
+            </TabsContent>
+            <TabsContent value="groups">
+              <KnowledgeGroupsTable documents={documents} onDeleteGroup={handleGroupDeleted} />
+            </TabsContent>
+          </Tabs>
+        ) : (
+          knowledgeTab
+        )}
       </div>
 
       <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>

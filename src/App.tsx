@@ -12,6 +12,7 @@ import { ModelSettings } from "@/components/settings/model-settings"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { ChatPage } from "@/pages/chat-page"
 import { ConversationsPage } from "@/pages/conversations-page"
+import { KnowledgeGroupDetailPage } from "@/pages/knowledge-group-detail-page"
 import { InboundLogPage } from "@/pages/inbound-log-page"
 import { JobsPage } from "@/pages/jobs-page"
 import { KnowledgeBasePage } from "@/pages/knowledge-base-page"
@@ -40,6 +41,7 @@ function App() {
             />
             <Route path="connect/conversations" element={<ConversationsPage />} />
             <Route path="connect/knowledge" element={<KnowledgeBasePage mode="connect" />} />
+            <Route path="connect/knowledge/groups/:groupId" element={<KnowledgeGroupDetailPage />} />
             <Route
               path="connect/knowledge/:itemId"
               element={<KnowledgeDetailPage mode="connect" />}

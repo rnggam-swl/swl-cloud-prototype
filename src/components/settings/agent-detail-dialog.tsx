@@ -17,7 +17,7 @@ import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ModeEditor } from "@/components/settings/agent-instruction-editor"
 import { usePersistedDocuments } from "@/lib/knowledge-data"
-import { useKnowledgeVariant } from "@/lib/knowledge-variant"
+import { isGroupVariant, useKnowledgeVariant } from "@/lib/knowledge-variant"
 import { metaLine } from "@/lib/model-catalog"
 import {
   catalogFor,
@@ -214,14 +214,14 @@ function AgentForm({
     // An agent can belong to more than one group, so this adds the agent to
     // every group in `groupIds` and removes it from every group not in
     // `groupIds`, in the same pass.
-    if (renamed || variant === "c") {
+    if (renamed || isGroupVariant(variant)) {
       setGroups((prev) =>
         prev.map((g) => {
           let agentsList = g.agents
           if (renamed && oldLabel && agentsList.includes(oldLabel)) {
             agentsList = agentsList.map((a) => (a === oldLabel ? newLabel : a))
           }
-          if (variant === "c") {
+          if (isGroupVariant(variant)) {
             const shouldBeIn = groupIds.includes(g.id)
             const has = agentsList.includes(newLabel)
             if (shouldBeIn && !has) agentsList = [...agentsList, newLabel]
@@ -289,7 +289,7 @@ function AgentForm({
           maxLength={280}
         />
       </div>
-      {variant === "c" ? (
+      {isGroupVariant(variant) ? (
         <div className="pt-1">
           <div className="flex items-center justify-between gap-3">
             <label className="text-xs font-medium">Knowledge groups</label>

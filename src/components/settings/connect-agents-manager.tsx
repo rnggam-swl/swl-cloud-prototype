@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Button } from "@/components/ui/button"
 import { usePersistedDocuments } from "@/lib/knowledge-data"
-import { useKnowledgeVariant } from "@/lib/knowledge-variant"
+import { isGroupVariant, useKnowledgeVariant } from "@/lib/knowledge-variant"
 import { usePersistedSettings, type ConnectAgent } from "@/lib/settings-data"
 import { cn } from "@/lib/utils"
 
@@ -75,9 +75,9 @@ export function ConnectAgentsManager({
         {agents.map((a: ConnectAgent) => {
           const isSelected = a.agentKey === selected
           const isGeneral = a.agentKey === "general"
-          const agentGroups = variant === "c" ? groups.filter((g) => g.agents.includes(a.label)) : []
+          const agentGroups = isGroupVariant(variant) ? groups.filter((g) => g.agents.includes(a.label)) : []
           const docCount =
-            variant !== "c"
+            !isGroupVariant(variant)
               ? documents.filter((d) => d.scope === a.label || d.extraScopes?.includes(a.label)).length
               : 0
           return (
@@ -90,7 +90,7 @@ export function ConnectAgentsManager({
             >
               <button type="button" onClick={() => onOpen(a.agentKey)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
                 <span className="truncate font-medium">{a.label}</span>
-                {variant === "c" ? (
+                {isGroupVariant(variant) ? (
                   agentGroups.map((g) => (
                     <span
                       key={g.id}

@@ -5,7 +5,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import type { KnowledgeDocument } from "@/lib/knowledge-data"
-import type { KbVariant, KnowledgeGroup } from "@/lib/knowledge-variant"
+import { isGroupVariant, type KbVariant, type KnowledgeGroup } from "@/lib/knowledge-variant"
 
 export function MetaSeparator() {
   return <span className="text-border">|</span>
@@ -28,10 +28,10 @@ export function DocScopeTag({
   variant: KbVariant
   groups: KnowledgeGroup[]
 }) {
-  const isGrouped = variant === "c" && !!doc.groupId
+  const isGrouped = isGroupVariant(variant) && !!doc.groupId
   const group = isGrouped ? groups.find((g) => g.id === doc.groupId) : undefined
   const isGeneral = doc.scope === "General" && !isGrouped
-  const Icon = variant === "c" ? Layers : Bot
+  const Icon = isGroupVariant(variant) ? Layers : Bot
 
   const trigger = (
     <span className="flex items-center gap-1 underline decoration-dotted underline-offset-2">
