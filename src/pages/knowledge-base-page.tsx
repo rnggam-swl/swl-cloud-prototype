@@ -84,7 +84,17 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
   const [settings] = usePersistedSettings()
   const [documents, setDocuments] = usePersistedDocuments()
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [confirmOpen, setConfirmOpen] = useState(false)
+  // What the confirm dialog will delete — kept apart from the checkbox
+  // selection so a row's own Delete button never touches the bulk selection.
+  // Targets outlive the open flag so the dialog copy doesn't flicker while
+  // it animates closed.
+  const [deleteTargetIds, setDeleteTargetIds] = useState<string[] | null>(null)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+
+  function requestDelete(ids: string[]) {
+    setDeleteTargetIds(ids)
+    setDeleteOpen(true)
+  }
   const [writeOpen, setWriteOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
   const [accessDoc, setAccessDoc] = useState<KnowledgeDocument | null>(null)
@@ -214,15 +224,18 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
     })
   }
 
-  function confirmDelete() {
-    setDocuments((prev) => prev.filter((d) => !selectedIds.has(d.id)))
-    setSelectedIds(new Set())
-    setConfirmOpen(false)
-  }
+  const deleteCount = deleteTargetIds?.length ?? 0
+  const deleteSingleName =
+    deleteCount === 1 ? documents.find((d) => d.id === deleteTargetIds![0])?.name : undefined
 
-  function requestDeleteOne(id: string) {
-    setSelectedIds(new Set([id]))
-    setConfirmOpen(true)
+  function confirmDelete() {
+    if (!deleteTargetIds) return
+    const targets = new Set(deleteTargetIds)
+    setDocuments((prev) => prev.filter((d) => !targets.has(d.id)))
+    // Drop deleted docs from the selection but keep anything else the user
+    // had checked (a single-row delete leaves the bulk selection intact).
+    setSelectedIds((prev) => new Set([...prev].filter((id) => !targets.has(id))))
+    setDeleteOpen(false)
   }
 
   function retryDocument(id: string) {
@@ -373,7 +386,7 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
               {selectedCount > 0 && (
                 <Button
                   size="lg"
-                  onClick={() => setConfirmOpen(true)}
+                  onClick={() => requestDelete([...selectedIds])}
                   className="border-transparent bg-destructive text-white hover:bg-destructive/90"
                 >
                   <Trash2 className="size-4" />
@@ -611,7 +624,7 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
                     variant="ghost"
                     size="sm"
                     className="text-muted-foreground hover:text-destructive"
-                    onClick={() => requestDeleteOne(doc.id)}
+                    onClick={() => requestDelete([doc.id])}
                   >
                     <Trash2 className="size-3.5" />
                     Delete
@@ -623,17 +636,18 @@ export function KnowledgeBasePage({ mode }: { mode: KbMode }) {
         </section>
       </div>
 
-      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>
-              Delete {selectedCount} {selectedCount === 1 ? "document" : "documents"}?
+            <AlertDialogTitle className="break-words">
+              {deleteSingleName
+                ? `Delete “${deleteSingleName}”?`
+                : `Delete ${deleteCount} ${deleteCount === 1 ? "document" : "documents"}?`}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently removes the selected{" "}
-              {selectedCount === 1 ? "document" : "documents"} from this
-              knowledge base, and the assistant will stop using{" "}
-              {selectedCount === 1 ? "it" : "them"} to answer. This cannot be
+              This permanently removes {deleteSingleName ? "this document" : `the selected ${deleteCount === 1 ? "document" : "documents"}`}{" "}
+              from this knowledge base, and the assistant will stop using{" "}
+              {deleteCount === 1 ? "it" : "them"} to answer. This cannot be
               undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
